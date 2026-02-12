@@ -95,7 +95,7 @@ export default function AnimatedTabBar({ state, descriptors, navigation }: TabBa
   const tabStyles = [tab0Style, tab1Style, tab2Style, tab3Style];
 
   return (
-    <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 20 : 10) }]}>
+    <View style={[styles.container, { paddingBottom: insets.bottom }]}>
       <Animated.View style={[styles.indicator, indicatorStyle]} />
 
       <View style={styles.tabContainer}>
@@ -174,6 +174,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingBottom: 10,
   },
   tabContent: {
     alignItems: 'center',

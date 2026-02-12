@@ -1,24 +1,20 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, Dimensions, PanResponder } from 'react-native';
-import { Image } from 'expo-image';
 import { IconSymbol } from '@/components/ui/IconSymbol';
+import { useAuth, useUser } from '@clerk/clerk-expo';
+import { Image } from 'expo-image';
+import { router } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { Dimensions, PanResponder, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, {
   FadeIn,
-  SlideInUp,
+  interpolate,
   SlideInLeft,
-  useSharedValue,
+  SlideInUp,
   useAnimatedStyle,
-  withSpring,
-  withTiming,
+  useSharedValue,
   withRepeat,
   withSequence,
-  interpolate,
-  Extrapolate,
+  withTiming
 } from 'react-native-reanimated';
-import { useAuth, useUser } from '@clerk/clerk-expo';
-import { router } from 'expo-router';
-import { UserService } from '@/lib/userService';
-import Markdown from 'react-native-markdown-display';
 
 const { width } = Dimensions.get('window');
 
@@ -59,11 +55,11 @@ const astralProfile: AstralProfile = {
 };
 
 const initialProfileData: ProfileData = {
-  aventura: 25,
-  sostenibilidad: 20,
-  cultura: 20,
-  conexion: 20,
-  lujo: 15,
+  aventura: 40,
+  sostenibilidad: 40,
+  cultura: 40,
+  conexion: 40,
+  lujo: 40,
 };
 
 const initialSecondaryAttributes: SecondaryAttributes = {
@@ -95,24 +91,33 @@ const CustomSlider = ({
     onMoveShouldSetPanResponder: () => true,
     onPanResponderGrant: (evt) => {
       const locationX = evt.nativeEvent.locationX;
-      const percentage = Math.max(0, Math.min(100, (locationX / sliderWidth) * 100));
-      onValueChange(percentage);
+      if (sliderWidth > 0) {
+        const percentage = Math.max(0, Math.min(100, (locationX / sliderWidth) * 100));
+        onValueChange(percentage);
+      }
     },
     onPanResponderMove: (evt) => {
       const locationX = evt.nativeEvent.locationX;
-      const percentage = Math.max(0, Math.min(100, (locationX / sliderWidth) * 100));
-      onValueChange(percentage);
+      if (sliderWidth > 0) {
+        const percentage = Math.max(0, Math.min(100, (locationX / sliderWidth) * 100));
+        onValueChange(percentage);
+      }
     },
   });
 
   return (
     <View
-      style={styles.sliderTrack}
+      style={styles.sliderTouchArea}
       onLayout={(e) => setSliderWidth(e.nativeEvent.layout.width)}
       {...panResponder.panHandlers}
     >
-      <View style={[styles.sliderFill, { width: `${value}%`, backgroundColor: color }]} />
-      <View style={[styles.sliderThumb, { left: `${value}%`, backgroundColor: color }]} />
+      <View style={styles.sliderTrack} pointerEvents="none">
+        <View style={[styles.sliderFill, { width: `${value}%`, backgroundColor: color }]} />
+      </View>
+      <View
+        style={[styles.sliderThumb, { left: `${value}%`, backgroundColor: color }]}
+        pointerEvents="none"
+      />
     </View>
   );
 };
@@ -386,7 +391,7 @@ export default function ProfileScreen() {
   const totalPrimaryPoints = Object.values(profileData).reduce((sum, val) => sum + val, 0);
   const totalSecondaryPoints = Object.values(secondaryAttrs).reduce((sum, val) => sum + val, 0);
 
-  
+
 
   const handleSignOut = async () => {
     try {
@@ -399,27 +404,19 @@ export default function ProfileScreen() {
 
   const handlePrimaryChange = (key: keyof ProfileData, newValue: number) => {
     newValue = Math.round(newValue); // Asegurar números enteros
-    const diff = newValue - profileData[key];
-    const others = Object.keys(profileData).filter(k => k !== key) as (keyof ProfileData)[];
-    const othersTotal = others.reduce((sum, k) => sum + profileData[k], 0);
 
-    if (othersTotal === 0 && diff > 0) return;
+    // Calcular el total actual excluyendo el valor que estamos cambiando
+    const currentTotalExcludingKey = Object.keys(profileData)
+      .filter(k => k !== key)
+      .reduce((sum, k) => sum + profileData[k as keyof ProfileData], 0);
 
-    const newData = { ...profileData, [key]: newValue };
+    // El máximo permitido para este valor es (200 - suma de los otros), pero nunca más de 100
+    const maxAllowed = Math.min(100, 200 - currentTotalExcludingKey);
 
-    others.forEach(k => {
-      const proportion = othersTotal > 0 ? profileData[k] / othersTotal : 1 / others.length;
-      newData[k] = Math.max(0, Math.round(profileData[k] - (diff * proportion)));
-    });
+    // Si el nuevo valor excede el permitido, lo limitamos
+    const finalValue = Math.min(newValue, maxAllowed);
 
-    const sum = Object.values(newData).reduce((s, v) => s + v, 0);
-    if (sum > 0) {
-      Object.keys(newData).forEach(k => {
-        newData[k as keyof ProfileData] = Math.round((newData[k as keyof ProfileData] / sum) * 100);
-      });
-    }
-
-    setProfileData(newData);
+    setProfileData({ ...profileData, [key]: finalValue });
   };
 
   const handleSecondaryChange = (key: keyof SecondaryAttributes, newValue: number) => {
@@ -465,7 +462,7 @@ export default function ProfileScreen() {
         <AstralCard imageUrl={user?.imageUrl} />
 
         {/* Descripción del Perfil Astral */}
-       
+
 
         {/* Pentagon Chart */}
         <View style={styles.chartSection}>
@@ -484,8 +481,14 @@ export default function ProfileScreen() {
             style={styles.sectionTitle}
             entering={SlideInLeft.duration(400).delay(600)}
           >
-            Dimensiones Principales (100 pts)
+            Dimensiones Principales
           </Animated.Text>
+
+          <View style={styles.pointsCounter}>
+            <Text style={styles.pointsText}>
+              Puntos disponibles: <Text style={[styles.pointsValue, totalPrimaryPoints > 200 && styles.pointsOverLimit]}>{Math.max(0, 200 - totalPrimaryPoints)}</Text>
+            </Text>
+          </View>
 
           <EditableStatBar
             emoji="🏔️"
@@ -528,90 +531,6 @@ export default function ProfileScreen() {
           />
         </View>
 
-        {/* Ritmo de Viaje */}
-        <View style={styles.statsSection}>
-          <Text style={styles.sectionTitle}>Ritmo de Viaje</Text>
-          <EditableStatBar
-            emoji="🎯"
-            label="Explorador Intensivo"
-            value={secondaryAttrs.exploradorIntensivo}
-            onChange={(v) => handleSecondaryChange('exploradorIntensivo', v)}
-            color="#DC2626"
-          />
-          <EditableStatBar
-            emoji="🧘"
-            label="Viajero Contemplativo"
-            value={secondaryAttrs.viajeroContemplativo}
-            onChange={(v) => handleSecondaryChange('viajeroContemplativo', v)}
-            color="#059669"
-          />
-          <EditableStatBar
-            emoji="📸"
-            label="Cazador de Experiencias"
-            value={secondaryAttrs.cazadorExperiencias}
-            onChange={(v) => handleSecondaryChange('cazadorExperiencias', v)}
-            color="#7C3AED"
-          />
-        </View>
-
-        {/* Estilo de Planificación */}
-        <View style={styles.statsSection}>
-          <Text style={styles.sectionTitle}>Estilo de Planificación</Text>
-          <EditableStatBar
-            emoji="📋"
-            label="Arquitecto del Viaje"
-            value={secondaryAttrs.arquitectoViaje}
-            onChange={(v) => handleSecondaryChange('arquitectoViaje', v)}
-            color="#D97706"
-          />
-          <EditableStatBar
-            emoji="🎲"
-            label="Navegante Libre"
-            value={secondaryAttrs.naveganteLibre}
-            onChange={(v) => handleSecondaryChange('naveganteLibre', v)}
-            color="#2563EB"
-          />
-          <EditableStatBar
-            emoji="🗺️"
-            label="Explorador Equilibrado"
-            value={secondaryAttrs.exploradorEquilibrado}
-            onChange={(v) => handleSecondaryChange('exploradorEquilibrado', v)}
-            color="#EC4899"
-          />
-        </View>
-
-        {/* Motivación Principal */}
-        <View style={styles.statsSection}>
-          <Text style={styles.sectionTitle}>Motivación Principal</Text>
-          <EditableStatBar
-            emoji="🌟"
-            label="Transformación Personal"
-            value={secondaryAttrs.transformacionPersonal}
-            onChange={(v) => handleSecondaryChange('transformacionPersonal', v)}
-            color="#F59E0B"
-          />
-          <EditableStatBar
-            emoji="🤝"
-            label="Contribución Social"
-            value={secondaryAttrs.contribucionSocial}
-            onChange={(v) => handleSecondaryChange('contribucionSocial', v)}
-            color="#10B981"
-          />
-          <EditableStatBar
-            emoji="🎨"
-            label="Inspiración Creativa"
-            value={secondaryAttrs.inspiracionCreativa}
-            onChange={(v) => handleSecondaryChange('inspiracionCreativa', v)}
-            color="#8B5CF6"
-          />
-          <EditableStatBar
-            emoji="🏛️"
-            label="Coleccionista de Historias"
-            value={secondaryAttrs.coleccionistaHistorias}
-            onChange={(v) => handleSecondaryChange('coleccionistaHistorias', v)}
-            color="#EF4444"
-          />
-        </View>
 
         {/* Footer spacer */}
         <View style={styles.footer} />
@@ -624,6 +543,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  footer: {
+    height: 100,
   },
   header: {
     flexDirection: 'row',
@@ -772,13 +694,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     height: 1,
     backgroundColor: '#E5E7EB',
-    transformOrigin: '0 50%',
+    transformOrigin: ['0%', '50%', 0],
   },
   radarLine: {
     position: 'absolute',
     height: 1,
     backgroundColor: '#E5E7EB',
-    transformOrigin: '0 0',
+    transformOrigin: ['0%', '0%', 0],
   },
   pentagonContainer: {
     position: 'absolute',
@@ -788,7 +710,7 @@ const styles = StyleSheet.create({
   pentagonEdge: {
     position: 'absolute',
     height: 2,
-    transformOrigin: '0 50%',
+    transformOrigin: ['0%', '50%', 0],
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
@@ -901,42 +823,32 @@ const styles = StyleSheet.create({
     minWidth: 40,
     textAlign: 'right',
   },
+  sliderTouchArea: {
+    height: 40,
+    justifyContent: 'center',
+    width: '100%',
+  },
   sliderTrack: {
-    height: 8,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 4,
-    position: 'relative',
-    marginTop: 8,
+    height: 10,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 5,
+    width: '100%',
   },
   sliderFill: {
     height: '100%',
-    borderRadius: 4,
-    position: 'absolute',
-    left: 0,
-    top: 0,
+    borderRadius: 5,
   },
   sliderThumb: {
     width: 24,
     height: 24,
     borderRadius: 12,
     position: 'absolute',
-    top: -8,
+    top: 8,
     marginLeft: -12,
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  footer: {
-    height: 40,
-  },
-});
-
-const markdownStyles = StyleSheet.create({
-  body: {
+    shadowRadius: 2,
     fontSize: 15,
     color: '#374151',
     lineHeight: 24,

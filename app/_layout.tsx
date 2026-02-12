@@ -1,17 +1,15 @@
+import { ClerkProvider, useAuth, useUser } from '@clerk/clerk-expo';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
-import { Stack, usePathname, useSegments, useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { Platform, AppState, View, ActivityIndicator } from 'react-native';
-import * as NavigationBar from 'expo-navigation-bar';
-import { useEffect, useRef, useState } from 'react';
-import { ClerkProvider, ClerkLoaded, useAuth, useUser } from '@clerk/clerk-expo';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
+import { StatusBar } from 'expo-status-bar';
+import { useEffect, useRef } from 'react';
 
-import { useColorScheme } from '@/hooks/useColorScheme';
-import { useSupabaseAuth } from '@/lib/useSupabaseAuth';
 import { AlertProvider } from '@/contexts/AlertContext';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import { UserService } from '@/lib/userService';
+import { useSupabaseAuth } from '@/lib/useSupabaseAuth';
 
 const tokenCache = {
   async getToken(key: string) {
@@ -32,56 +30,15 @@ const tokenCache = {
 
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
-  const pathname = usePathname();
   const segments = useSegments();
   const router = useRouter();
   const { isSignedIn, isLoaded } = useAuth();
   const { user } = useUser();
-  const appState = useRef(AppState.currentState);
   const hasCheckedOnboarding = useRef(false);
   const currentUserId = useRef<string | null>(null);
 
   // Sincronizar tokens de Clerk con Supabase
   useSupabaseAuth();
-
-  // Función para ocultar la barra de navegación de Android
-  const hideNavigationBar = async () => {
-    if (Platform.OS === 'android') {
-      try {
-        await NavigationBar.setVisibilityAsync('hidden');
-        await NavigationBar.setBehaviorAsync('overlay-swipe');
-        await NavigationBar.setBackgroundColorAsync('#FFFFFF00'); // Transparente
-        await NavigationBar.setPositionAsync('absolute');
-      } catch (error) {
-        console.error('Error ocultando barra de navegación:', error);
-      }
-    }
-  };
-
-  // Ocultar la barra de navegación de Android en TODAS las pantallas
-  useEffect(() => {
-    hideNavigationBar();
-  }, [pathname]); // Se ejecuta cada vez que cambia la ruta
-
-  // Mantener la barra oculta cuando la app regresa al foreground
-  useEffect(() => {
-    if (Platform.OS === 'android') {
-      const subscription = AppState.addEventListener('change', (nextAppState) => {
-        if (
-          appState.current.match(/inactive|background/) &&
-          nextAppState === 'active'
-        ) {
-          // La app ha regresado al foreground
-          hideNavigationBar();
-        }
-        appState.current = nextAppState;
-      });
-
-      return () => {
-        subscription.remove();
-      };
-    }
-  }, []);
 
   // Protección de rutas y verificación de onboarding
   useEffect(() => {
@@ -154,6 +111,7 @@ function RootLayoutNav() {
           <Stack.Screen name="help-center" options={{ headerShown: false }} />
           <Stack.Screen name="terms" options={{ headerShown: false }} />
           <Stack.Screen name="privacy" options={{ headerShown: false }} />
+          <Stack.Screen name="astral-profile" options={{ headerShown: false }} />
           <Stack.Screen name="+not-found" />
         </Stack>
         <StatusBar style="auto" />

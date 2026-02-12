@@ -15,6 +15,7 @@ interface Question {
   placeholder?: string;
   required?: boolean;
   options?: string[];
+  multiSelect?: boolean;
 }
 
 const questions: Question[] = [
@@ -28,58 +29,68 @@ const questions: Question[] = [
   },
   {
     id: 2,
-    question: '¿Qué tipo de experiencias buscas cuando viajas?',
-    subtitle: 'Tu estilo de viaje preferido nos ayudará a personalizar tus recomendaciones',
-    type: 'multiple-choice',
-    required: true,
-    options: [
-      'Aventura y adrenalina',
-      'Relajación y bienestar',
-      'Cultura e historia',
-      'Naturaleza y ecoturismo',
-      'Vida nocturna y social',
-      'Gastronomía local',
-      'Espiritualidad y crecimiento personal'
-    ]
+    question: '¿De qué país nos visitas?',
+    subtitle: 'Esto es crucial para idioma, recomendaciones culturales y conectar con compatriotas',
+    type: 'text',
+    placeholder: 'Ej: España, Argentina, Brasil...',
+    required: true
   },
   {
     id: 3,
-    question: '¿Qué te gustaría descubrir o transformar a través de tus viajes?',
-    subtitle: 'Tu motivación personal nos permitirá sugerir experiencias más significativas',
+    question: '¿Cuántos días estarás en México?',
+    subtitle: 'Define profundidad de recomendaciones y tipo de itinerarios',
     type: 'multiple-choice',
     required: true,
     options: [
-      'Conectar conmigo mismo/a',
-      'Conocer nuevas culturas',
-      'Superar miedos o límites',
-      'Encontrar inspiración creativa',
-      'Sanar y renovar energías',
-      'Fortalecer relaciones',
-      'Vivir aventuras únicas'
+      '3-5 días',
+      '1 semana',
+      '2 semanas',
+      '3+ semanas',
+      'Aún no lo sé'
     ]
   },
   {
     id: 4,
-    question: '¿Cuál es tu fecha de nacimiento?',
-    subtitle: 'Necesaria para ubicar el Sol, la Luna y los planetas en tu carta',
-    type: 'date',
-    required: false
+    question: '¿Con quién viajas?',
+    subtitle: 'Personaliza tipo de actividades y alojamientos',
+    type: 'multiple-choice',
+    required: true,
+    options: [
+      'Solo',
+      'Pareja',
+      'Amigos',
+      'Familia con niños',
+      'Grupo grande'
+    ]
   },
   {
     id: 5,
-    question: '¿A qué hora naciste?',
-    subtitle: 'Fundamental para calcular tu ascendente y casas astrológicas',
-    type: 'time',
-    placeholder: 'Si no sabes la hora exacta, usa la aproximada',
-    required: false
+    question: '¿Qué te interesa además del fútbol?',
+    subtitle: 'Opcional - puedes seleccionar una o más opciones',
+    type: 'multiple-choice',
+    required: false,
+    multiSelect: true,
+    options: [
+      'Gastronomía',
+      'Cultura e historia',
+      'Vida nocturna',
+      'Playas y naturaleza',
+      'Compras',
+      'Solo fútbol'
+    ]
   },
   {
     id: 6,
-    question: '¿En qué ciudad y país naciste?',
-    subtitle: 'Necesario para ajustar la posición planetaria según zona horaria',
-    type: 'location',
-    placeholder: 'Ej: Madrid, España',
-    required: false
+    question: '¿Qué tipo de experiencias buscas?',
+    subtitle: 'Tu estilo de viaje nos ayudará a personalizar tus recomendaciones',
+    type: 'multiple-choice',
+    required: true,
+    options: [
+      'Viajero económico / mochilero',
+      'Comodidad a buen precio',
+      'Experiencias premium',
+      'Lo mejor sin límites'
+    ]
   }
 ];
 
@@ -89,6 +100,7 @@ export default function CuestionarioScreen() {
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState<{ [key: number]: string | Date }>({});
   const [currentAnswer, setCurrentAnswer] = useState<string>('');
+  const [multiSelectAnswers, setMultiSelectAnswers] = useState<string[]>([]);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -117,6 +129,16 @@ export default function CuestionarioScreen() {
     setCurrentAnswer(text);
   };
 
+  const handleMultiSelectToggle = (option: string) => {
+    setMultiSelectAnswers(prev => {
+      if (prev.includes(option)) {
+        return prev.filter(item => item !== option);
+      } else {
+        return [...prev, option];
+      }
+    });
+  };
+
   const handleDateChange = (event: any, selectedDate?: Date) => {
     setShowDatePicker(Platform.OS === 'ios');
     if (selectedDate) {
@@ -140,7 +162,10 @@ export default function CuestionarioScreen() {
     const currentQ = questions[currentQuestion];
     let answerToSave = currentAnswer;
 
-    if (currentQ.type === 'date' || currentQ.type === 'time') {
+    // Si es multiselect, usar el array de respuestas
+    if (currentQ.multiSelect) {
+      answerToSave = multiSelectAnswers.join(', ');
+    } else if (currentQ.type === 'date' || currentQ.type === 'time') {
       answerToSave = selectedDate.toISOString();
     }
 
@@ -162,6 +187,7 @@ export default function CuestionarioScreen() {
     if (currentQuestion < questions.length - 1) {
       setCurrentQuestion(currentQuestion + 1);
       setCurrentAnswer('');
+      setMultiSelectAnswers([]);
       setSelectedDate(new Date());
     } else {
       handleComplete();
@@ -171,8 +197,17 @@ export default function CuestionarioScreen() {
   const handleBack = async () => {
     if (currentQuestion > 0) {
       setCurrentQuestion(currentQuestion - 1);
-      const previousAnswer = answers[questions[currentQuestion - 1].id];
-      setCurrentAnswer(previousAnswer ? String(previousAnswer) : '');
+      const previousQ = questions[currentQuestion - 1];
+      const previousAnswer = answers[previousQ.id];
+
+      if (previousQ.multiSelect && previousAnswer) {
+        const answersArray = String(previousAnswer).split(', ').filter(a => a.trim() !== '');
+        setMultiSelectAnswers(answersArray);
+        setCurrentAnswer('');
+      } else {
+        setCurrentAnswer(previousAnswer ? String(previousAnswer) : '');
+        setMultiSelectAnswers([]);
+      }
     } else {
       Alert.alert(
         'Salir del onboarding',
@@ -248,81 +283,6 @@ export default function CuestionarioScreen() {
 
       // Guardar las respuestas del cuestionario usando finalAnswers
       await UserService.saveAstralQuestionnaire(supabaseUser.id, finalAnswers);
-
-      // Si el usuario proporcionó datos de nacimiento, generar perfil astral
-      const fecha = finalAnswers[4];
-      const hora = finalAnswers[5];
-      const lugar = finalAnswers[6];
-
-      if (fecha) {
-        try {
-
-          // Formatear fecha para el agente (solo YYYY-MM-DD)
-          let fechaFormateada = '';
-          if (typeof fecha === 'string') {
-            // Si es ISO string, extraer solo la fecha
-            if (fecha.includes('T')) {
-              fechaFormateada = fecha.split('T')[0];
-            } else {
-              fechaFormateada = fecha;
-            }
-          } else if (fecha instanceof Date) {
-            fechaFormateada = fecha.toISOString().split('T')[0];
-          }
-
-          // Formatear hora (solo HH:MM)
-          let horaFormateada = undefined;
-          if (hora) {
-            if (typeof hora === 'string') {
-              // Si es ISO string, extraer solo la hora HH:MM
-              if (hora.includes('T')) {
-                const dateObj = new Date(hora);
-                const hours = String(dateObj.getHours()).padStart(2, '0');
-                const minutes = String(dateObj.getMinutes()).padStart(2, '0');
-                horaFormateada = `${hours}:${minutes}`;
-              } else {
-                horaFormateada = hora;
-              }
-            } else if (hora instanceof Date) {
-              const hours = String(hora.getHours()).padStart(2, '0');
-              const minutes = String(hora.getMinutes()).padStart(2, '0');
-              horaFormateada = `${hours}:${minutes}`;
-            }
-          }
-
-          // Formatear lugar (verificar si existe y no está vacío)
-          let lugarFormateado = undefined;
-          if (lugar && typeof lugar === 'string' && lugar.trim() !== '') {
-            lugarFormateado = lugar.trim();
-          }
-
-          // Llamar al agente astral
-          await AgentsService.generateAstroProfile({
-            user_id: supabaseUser.id.toString(),
-            nombre: finalAnswers[1] ? String(finalAnswers[1]).trim() : undefined,
-            experiencias_viaje: finalAnswers[2] ? String(finalAnswers[2]).trim() : undefined,
-            transformacion_viaje: finalAnswers[3] ? String(finalAnswers[3]).trim() : undefined,
-            fecha_nacimiento: fechaFormateada,
-            hora_nacimiento: horaFormateada,
-            lugar_nacimiento: lugarFormateado,
-          });
-
-          // Mostrar mensaje de éxito
-          Alert.alert(
-            '¡Perfil Creado!',
-            'Tu perfil astrológico ha sido generado. Puedes verlo en la sección de Perfil.',
-            [{ text: 'OK' }]
-          );
-        } catch (astroError) {
-          console.error('Error generando perfil astral:', astroError);
-          // No bloqueamos el flujo si falla el perfil astral
-          Alert.alert(
-            'Perfil Parcial',
-            'Tus respuestas se guardaron, pero no se pudo generar el perfil astral. Puedes intentarlo más tarde desde tu perfil.',
-            [{ text: 'OK' }]
-          );
-        }
-      }
     } catch (error) {
       console.error('Error in handleComplete:', error);
       Alert.alert(
@@ -341,40 +301,77 @@ export default function CuestionarioScreen() {
   const isLastQuestion = currentQuestion === questions.length - 1;
 
   // Validación según el tipo de pregunta
-  const isAnswerValid = currentQ.required ? currentAnswer.trim() !== '' : true;
+  const isAnswerValid = currentQ.required
+    ? (currentQ.multiSelect ? multiSelectAnswers.length > 0 : currentAnswer.trim() !== '')
+    : true;
 
   const renderInputField = () => {
     switch (currentQ.type) {
       case 'multiple-choice':
-        return (
-          <View style={styles.optionsContainer}>
-            {currentQ.options?.map((option, index) => (
-              <TouchableOpacity
-                key={index}
-                style={[
-                  styles.optionButton,
-                  currentAnswer === option && styles.optionButtonSelected
-                ]}
-                onPress={() => setCurrentAnswer(option)}
-              >
-                <View style={[
-                  styles.optionCircle,
-                  currentAnswer === option && styles.optionCircleSelected
-                ]}>
-                  {currentAnswer === option && (
-                    <View style={styles.optionCircleInner} />
-                  )}
-                </View>
-                <Text style={[
-                  styles.optionText,
-                  currentAnswer === option && styles.optionTextSelected
-                ]}>
-                  {option}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        );
+        if (currentQ.multiSelect) {
+          return (
+            <View style={styles.optionsContainer}>
+              {currentQ.options?.map((option, index) => {
+                const isSelected = multiSelectAnswers.includes(option);
+                return (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.optionButton,
+                      isSelected && styles.optionButtonSelected
+                    ]}
+                    onPress={() => handleMultiSelectToggle(option)}
+                  >
+                    <View style={[
+                      styles.optionCheckbox,
+                      isSelected && styles.optionCheckboxSelected
+                    ]}>
+                      {isSelected && (
+                        <IconSymbol name="checkmark" size={14} color="#FFFFFF" />
+                      )}
+                    </View>
+                    <Text style={[
+                      styles.optionText,
+                      isSelected && styles.optionTextSelected
+                    ]}>
+                      {option}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          );
+        } else {
+          return (
+            <View style={styles.optionsContainer}>
+              {currentQ.options?.map((option, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={[
+                    styles.optionButton,
+                    currentAnswer === option && styles.optionButtonSelected
+                  ]}
+                  onPress={() => setCurrentAnswer(option)}
+                >
+                  <View style={[
+                    styles.optionCircle,
+                    currentAnswer === option && styles.optionCircleSelected
+                  ]}>
+                    {currentAnswer === option && (
+                      <View style={styles.optionCircleInner} />
+                    )}
+                  </View>
+                  <Text style={[
+                    styles.optionText,
+                    currentAnswer === option && styles.optionTextSelected
+                  ]}>
+                    {option}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          );
+        }
 
       case 'text':
       case 'location':
@@ -678,6 +675,20 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
+    backgroundColor: '#374151',
+  },
+  optionCheckbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  optionCheckboxSelected: {
+    borderColor: '#374151',
     backgroundColor: '#374151',
   },
   optionText: {

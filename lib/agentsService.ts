@@ -141,16 +141,18 @@ DATOS_JSON: ${JSON.stringify({
       let lastMessage = "";
 
       // Procesar el stream
+      // Procesar el stream
       for await (const chunk of streamResponse) {
-        if (chunk.data && chunk.data.messages) {
-          const messages = chunk.data.messages;
+        const chunkData = chunk as any;
+        if (chunkData.data && chunkData.data.messages) {
+          const messages = chunkData.data.messages;
           const lastMsg = messages[messages.length - 1];
           if (lastMsg && lastMsg.content) {
             lastMessage = lastMsg.content;
           }
         }
-        else if (chunk.messages) {
-          const messages = chunk.messages;
+        else if (chunkData.messages) {
+          const messages = chunkData.messages;
           const lastMsg = messages[messages.length - 1];
           if (lastMsg && lastMsg.content) {
             lastMessage = lastMsg.content;
@@ -176,8 +178,7 @@ DATOS_JSON: ${JSON.stringify({
         agentId: AGENT_IDS.ASTRO,
       });
       throw new Error(
-        `No se pudo generar el perfil astral: ${
-          error instanceof Error ? error.message : "Error desconocido"
+        `No se pudo generar el perfil astral: ${error instanceof Error ? error.message : "Error desconocido"
         }`
       );
     }
@@ -209,7 +210,7 @@ DATOS_JSON: ${JSON.stringify({
 Usuario ID: ${data.user_id}
 
 Respuestas del cuestionario:
-${JSON.stringify(data.cuestionario, null, 2)}`;
+${JSON.stringify(data.cuestionario)}`;
 
       const input = {
         messages: [
@@ -231,7 +232,8 @@ ${JSON.stringify(data.cuestionario, null, 2)}`;
 
       // Extraer el último mensaje
       let lastMessage = "";
-      const messages = result.values?.messages || result.messages || [];
+      const resultData = result as any;
+      const messages = resultData.values?.messages || resultData.messages || [];
 
       if (messages.length > 0) {
         const lastMsg = messages[messages.length - 1];
@@ -271,9 +273,83 @@ ${JSON.stringify(data.cuestionario, null, 2)}`;
         agentId: AGENT_IDS.FILTER,
       });
       throw new Error(
-        `No se pudieron obtener recomendaciones: ${
-          error instanceof Error ? error.message : "Error desconocido"
+        `No se pudieron obtener recomendaciones: ${error instanceof Error ? error.message : "Error desconocido"
         }`
+      );
+    }
+  }
+
+  /**
+   * Envía un mensaje al chatbot con streaming en tiempo real
+   *
+   * @param data Mensaje del usuario y contexto
+   * @param onUpdate Callback que se ejecuta con cada actualización del stream
+   * @returns Respuesta final del chatbot
+   */
+  static async streamChatMessage(
+    data: ChatMessageRequest,
+    onUpdate: (text: string) => void
+  ): Promise<ChatMessageResponse> {
+    try {
+      const client = getClient();
+
+      let threadId = data.thread_id;
+      if (!threadId) {
+        const thread = await client.threads.create();
+        threadId = thread.thread_id;
+      }
+
+      const mensaje = `Usuario ID: ${data.user_id}
+
+Mensaje del usuario: ${data.message}`;
+
+      const input = {
+        messages: [
+          {
+            role: "user",
+            content: mensaje,
+          },
+        ],
+      };
+
+      const streamResponse = client.runs.stream(
+        threadId,
+        AGENT_IDS.CHATBOT,
+        {
+          input,
+          streamMode: "values",
+        }
+      );
+
+      let lastMessage = "";
+
+      for await (const chunk of streamResponse) {
+        const chunkData = chunk as any;
+
+        let messages = null;
+        if (chunkData.data && chunkData.data.messages) {
+          messages = chunkData.data.messages;
+        } else if (chunkData.messages) {
+          messages = chunkData.messages;
+        }
+
+        if (messages && messages.length > 0) {
+          const lastMsg = messages[messages.length - 1];
+          if (lastMsg && lastMsg.content) {
+            lastMessage = lastMsg.content;
+            onUpdate(lastMessage);
+          }
+        }
+      }
+
+      return {
+        message: lastMessage,
+        thread_id: threadId,
+      };
+    } catch (error) {
+      console.error("❌ [Chat Agent Stream] Error:", error);
+      throw new Error(
+        `No se pudo enviar el mensaje: ${error instanceof Error ? error.message : "Error desconocido"}`
       );
     }
   }
@@ -318,7 +394,8 @@ Mensaje del usuario: ${data.message}`;
 
       // Extraer el último mensaje
       let lastMessage = "";
-      const messages = result.values?.messages || result.messages || [];
+      const resultData = result as any;
+      const messages = resultData.values?.messages || resultData.messages || [];
 
       if (messages.length > 0) {
         const lastMsg = messages[messages.length - 1];
@@ -339,8 +416,7 @@ Mensaje del usuario: ${data.message}`;
         agentId: AGENT_IDS.CHATBOT,
       });
       throw new Error(
-        `No se pudo enviar el mensaje: ${
-          error instanceof Error ? error.message : "Error desconocido"
+        `No se pudo enviar el mensaje: ${error instanceof Error ? error.message : "Error desconocido"
         }`
       );
     }

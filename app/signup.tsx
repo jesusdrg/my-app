@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, StatusBar, TextInput, TouchableOpacity, Alert, Image, KeyboardAvoidingView, ScrollView, Platform, ActivityIndicator, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, StatusBar, TextInput, TouchableOpacity, Alert, Image, KeyboardAvoidingView, ScrollView, Platform, Keyboard } from 'react-native';
 import { useSignUp, useOAuth } from '@clerk/clerk-expo';
 import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';

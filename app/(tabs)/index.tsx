@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, StatusBar, KeyboardAvoidingView, Platform, ActivityIndicator, Modal, Animated } from 'react-native';
 import { IconSymbol, type IconSymbolName } from '@/components/ui/IconSymbol';
-import { useUser } from '@clerk/clerk-expo';
-import { UserService } from '@/lib/userService';
-import { useRouter } from 'expo-router';
 import AgentsService from '@/lib/agentsService';
 import ChatHistoryService, { type Conversation } from '@/lib/chatHistoryService';
+import { UserService } from '@/lib/userService';
+import { useUser } from '@clerk/clerk-expo';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 
 interface Message {
@@ -13,6 +13,7 @@ interface Message {
   text: string;
   sender: 'user' | 'bot';
   timestamp: Date;
+  tripIds?: number[];
 }
 
 interface SuggestionCard {
@@ -49,6 +50,46 @@ const SUGGESTIONS: SuggestionCard[] = [
   }
 ];
 
+const parseAgentMessage = (message: string): { text: string; tripIds: number[] } => {
+  let cleanedText = message;
+  const tripIds: number[] = [];
+
+  const tripPatterns = [
+    /\[TRIP:(\d+)\]/g,
+    /\[TRIPS:([\d,]+)\]/g,
+    /<!--\s*METADATA:\s*(\{[^}]+\})\s*-->/g,
+  ];
+
+  tripPatterns.forEach((pattern) => {
+    const matches = [...cleanedText.matchAll(pattern)];
+    matches.forEach((match) => {
+      if (match[1]) {
+        if (match[0].includes('METADATA')) {
+          try {
+            const metadata = JSON.parse(match[1]);
+            if (metadata.tripIds && Array.isArray(metadata.tripIds)) {
+              tripIds.push(...metadata.tripIds.map(Number));
+            }
+          } catch (e) {
+            console.error('Error parsing metadata:', e);
+          }
+        } else if (match[0].includes('TRIPS:')) {
+          const ids = match[1].split(',').map((id) => parseInt(id.trim(), 10));
+          tripIds.push(...ids);
+        } else if (match[0].includes('TRIP:')) {
+          tripIds.push(parseInt(match[1], 10));
+        }
+        cleanedText = cleanedText.replace(match[0], '');
+      }
+    });
+  });
+
+  return {
+    text: cleanedText.trim(),
+    tripIds: [...new Set(tripIds)],
+  };
+};
+
 export default function ChatScreen() {
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -68,13 +109,7 @@ export default function ChatScreen() {
     loadUserName();
   }, [user]);
 
-  useEffect(() => {
-    if (messages.length > 0) {
-      setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    }
-  }, [messages]);
+
 
   useEffect(() => {
     if (sidebarVisible) {
@@ -143,14 +178,29 @@ export default function ChatScreen() {
       setThreadId(conversation.thread_id);
       setConversationId(conversation.id);
 
-      const formattedMessages: Message[] = dbMessages.map((msg) => ({
-        id: msg.id,
-        text: msg.content,
-        sender: msg.sender,
-        timestamp: new Date(msg.created_at),
-      }));
+      const formattedMessages: Message[] = dbMessages.map((msg) => {
+        if (msg.sender === 'bot') {
+          const parsed = parseAgentMessage(msg.content);
+          return {
+            id: msg.id,
+            text: parsed.text,
+            sender: msg.sender,
+            timestamp: new Date(msg.created_at),
+            tripIds: parsed.tripIds,
+          };
+        }
+        return {
+          id: msg.id,
+          text: msg.content,
+          sender: msg.sender,
+          timestamp: new Date(msg.created_at),
+        };
+      });
 
       setMessages(formattedMessages);
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: false });
+      }, 100);
     } catch (error) {
       console.error('Error loading conversation:', error);
     } finally {
@@ -158,10 +208,31 @@ export default function ChatScreen() {
     }
   };
 
+  const handleDeleteConversation = async (conversationIdToDelete: number, event?: any) => {
+    if (event) {
+      event.stopPropagation();
+    }
+
+    try {
+      await ChatHistoryService.deleteConversation(conversationIdToDelete);
+
+      if (conversationId === conversationIdToDelete) {
+        setMessages([]);
+        setThreadId(null);
+        setConversationId(null);
+      }
+
+      await loadConversations();
+    } catch (error) {
+      console.error('Error deleting conversation:', error);
+    }
+  };
+
   const handleSendMessage = async (text?: string) => {
     const messageToSend = text || message.trim();
 
     if (messageToSend && !loading) {
+      Keyboard.dismiss();
       const newUserMessage: Message = {
         id: Date.now(),
         text: messageToSend,
@@ -171,6 +242,9 @@ export default function ChatScreen() {
 
       setMessages(prev => [...prev, newUserMessage]);
       setMessage('');
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
       setLoading(true);
 
       try {
@@ -184,11 +258,34 @@ export default function ChatScreen() {
           throw new Error('Usuario no encontrado en Supabase');
         }
 
-        const response = await AgentsService.sendChatMessage({
+        // Crear un mensaje bot temporal vacío para el streaming
+        const botMessageId = Date.now() + 1;
+        const initialBotMessage: Message = {
+          id: botMessageId,
+          text: '...', // Indicador inicial
+          sender: 'bot',
+          timestamp: new Date(),
+        };
+
+        setMessages(prev => [...prev, initialBotMessage]);
+
+        // Función para actualizar el mensaje del bot en tiempo real
+        const handleStreamUpdate = (updatedText: string) => {
+          const parsed = parseAgentMessage(updatedText);
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === botMessageId
+                ? { ...msg, text: parsed.text, tripIds: parsed.tripIds }
+                : msg
+            )
+          );
+        };
+
+        const response = await AgentsService.streamChatMessage({
           user_id: supabaseUser.id.toString(),
           message: messageToSend,
           thread_id: threadId || undefined,
-        });
+        }, handleStreamUpdate);
 
         let currentConversationId = conversationId;
 
@@ -210,25 +307,28 @@ export default function ChatScreen() {
         }
 
         if (!response.message || response.message.trim() === '') {
-          throw new Error('El agente no retornó un mensaje');
+          // Si por alguna razón llega vacío, mostramos error o lo dejamos como estaba
+          // Pero con el stream ya deberíamos tener algo
+          if (messages.find(m => m.id === botMessageId)?.text === '...') {
+            throw new Error('El agente no retornó un mensaje');
+          }
         }
 
-        const botResponse: Message = {
-          id: Date.now() + 1,
-          text: response.message,
-          sender: 'bot',
-          timestamp: new Date(),
-        };
-
-        setMessages(prev => [...prev, botResponse]);
+        // Asegurarnos que el mensaje final esté actualizado (por si el stream falló el último frame)
+        const finalParsed = parseAgentMessage(response.message);
+        setMessages(prev =>
+          prev.map(msg =>
+            msg.id === botMessageId
+              ? { ...msg, text: finalParsed.text, tripIds: finalParsed.tripIds }
+              : msg
+          )
+        );
 
         if (currentConversationId) {
-          await ChatHistoryService.saveMessage(currentConversationId, 'bot', response.message);
+          await ChatHistoryService.saveMessage(currentConversationId, 'bot', finalParsed.text);
         }
 
-        setTimeout(() => {
-          scrollViewRef.current?.scrollToEnd({ animated: true });
-        }, 100);
+
       } catch (error) {
         console.error('Error sending message:', error);
 
@@ -270,7 +370,7 @@ export default function ChatScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
@@ -349,9 +449,30 @@ export default function ChatScreen() {
                     {msg.text}
                   </Text>
                 ) : (
-                  <Markdown style={chatMarkdownStyles}>
-                    {msg.text}
-                  </Markdown>
+                  <>
+                    <Markdown style={chatMarkdownStyles}>
+                      {msg.text}
+                    </Markdown>
+                    {msg.tripIds && msg.tripIds.length > 0 && (
+                      <View style={styles.tripButtonsContainer}>
+                        {msg.tripIds.map((tripId) => (
+                          <TouchableOpacity
+                            key={tripId}
+                            style={styles.tripButton}
+                            onPress={() => router.push({
+                              pathname: '/trip-detail',
+                              params: { tripId }
+                            })}
+                            activeOpacity={0.8}
+                          >
+                            <IconSymbol name="airplane" size={16} color="#FFFFFF" />
+                            <Text style={styles.tripButtonText}>Ver Viaje</Text>
+                            <IconSymbol name="arrow.right" size={14} color="#FFFFFF" />
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+                  </>
                 )}
               </View>
             ))}
@@ -466,11 +587,22 @@ export default function ChatScreen() {
                           </Text>
                         )}
                       </View>
-                      {conversation.updated_at && (
-                        <Text style={styles.conversationDate}>
-                          {formatDate(conversation.updated_at)}
-                        </Text>
-                      )}
+                      <View style={styles.conversationActions}>
+                        {conversation.updated_at && (
+                          <Text style={styles.conversationDate}>
+                            {formatDate(conversation.updated_at)}
+                          </Text>
+                        )}
+                        <TouchableOpacity
+                          onPress={(e) => handleDeleteConversation(conversation.id, e)}
+                          style={styles.deleteButton}
+                          accessible={true}
+                          accessibilityLabel="Eliminar conversación"
+                          accessibilityRole="button"
+                        >
+                          <IconSymbol name="trash" size={18} color="#EF4444" />
+                        </TouchableOpacity>
+                      </View>
                     </TouchableOpacity>
                   ))
                 )}
@@ -758,7 +890,35 @@ const styles = StyleSheet.create({
   conversationDate: {
     fontSize: 12,
     color: '#9CA3AF',
+  },
+  conversationActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginTop: 4,
+    gap: 12,
+  },
+  deleteButton: {
+    padding: 4,
+  },
+  tripButtonsContainer: {
+    marginTop: 12,
+    gap: 8,
+  },
+  tripButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#000000',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  tripButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 

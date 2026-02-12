@@ -1,15 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, Switch, Platform, Linking } from 'react-native';
 import { IconSymbol } from '@/components/ui/IconSymbol';
-import { useAuth, useUser } from '@clerk/clerk-expo';
-import { router } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
-import { Image } from 'expo-image';
-import Animated, { FadeInDown } from 'react-native-reanimated';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAlert } from '@/contexts/AlertContext';
 import { UserService } from '@/lib/userService';
+import { useAuth, useUser } from '@clerk/clerk-expo';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
+import { router } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { Linking, Platform, ScrollView, StatusBar, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
 export default function SettingsScreen() {
   const { signOut } = useAuth();
@@ -50,11 +50,7 @@ export default function SettingsScreen() {
     savePreference('notificationsEnabled', value);
   };
 
-  const handleEmailNotificationsChange = (value: boolean) => {
-    setEmailNotifications(value);
-    savePreference('emailNotifications', value);
-  };
-
+ 
   const handleDarkModeChange = (value: boolean) => {
     setDarkMode(value);
     savePreference('darkMode', value);
@@ -383,12 +379,20 @@ export default function SettingsScreen() {
 
           <View style={styles.divider} />
 
+          <TouchableOpacity style={styles.menuItem} activeOpacity={0.7} onPress={() => router.push('/astral-profile')}>
+            <IconSymbol name="sparkles" size={20} color="#000000" />
+            <Text style={styles.menuItemText}>Perfil Astrológico</Text>
+            <IconSymbol name="chevron.right" size={18} color="#000000" />
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+          {/*
           <TouchableOpacity style={styles.menuItem} activeOpacity={0.7} onPress={handlePrivacySecurity}>
             <IconSymbol name={"lock.fill" as any} size={20} color="#000000" />
             <Text style={styles.menuItemText}>Privacidad y Seguridad</Text>
             <IconSymbol name="chevron.right" size={18} color="#000000" />
           </TouchableOpacity>
-
+*/}
           <View style={styles.divider} />
 
           <View style={styles.menuItem}>
@@ -397,20 +401,6 @@ export default function SettingsScreen() {
             <Switch
               value={notificationsEnabled}
               onValueChange={handleNotificationsChange}
-              trackColor={{ false: '#D1D5DB', true: '#000000' }}
-              thumbColor="#FFFFFF"
-              ios_backgroundColor="#D1D5DB"
-            />
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.menuItem}>
-            <IconSymbol name={"envelope.fill" as any} size={20} color="#000000" />
-            <Text style={styles.menuItemText}>Email</Text>
-            <Switch
-              value={emailNotifications}
-              onValueChange={handleEmailNotificationsChange}
               trackColor={{ false: '#D1D5DB', true: '#000000' }}
               thumbColor="#FFFFFF"
               ios_backgroundColor="#D1D5DB"
@@ -430,15 +420,6 @@ export default function SettingsScreen() {
               ios_backgroundColor="#D1D5DB"
             />
           </View>
-
-          <View style={styles.divider} />
-
-          <TouchableOpacity style={styles.menuItem} activeOpacity={0.7} onPress={handleLanguage}>
-            <IconSymbol name="globe" size={20} color="#000000" />
-            <Text style={styles.menuItemText}>Idioma</Text>
-            <Text style={styles.menuItemValue}>Español</Text>
-            <IconSymbol name="chevron.right" size={18} color="#000000" />
-          </TouchableOpacity>
 
           <View style={styles.divider} />
 
