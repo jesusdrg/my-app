@@ -212,3 +212,153 @@ export interface Message {
   content: string;
   created_at: string;
 }
+
+export interface MundialKnowledge {
+  id: number;
+  tipo: string;
+  titulo: string;
+  slug?: string;
+  zona?: string;
+  contenido: string;
+  ciudad: string;
+  metadata?: any;
+  active: boolean;
+  created_at: string;
+}
+
+export interface UserRecentPlace {
+  id: number;
+  user_id: number;
+  place_id: number;
+  visited_at: string;
+  mundial_knowledge?: MundialKnowledge;
+}
+
+// ==================== Nova Mundial 2026 Types ====================
+
+export interface Place {
+  id: number;
+  name: string;
+  slug: string;
+  description?: string;
+  short_description?: string;
+  category: 'estadio' | 'restaurante' | 'bar' | 'hotel' | 'cultural' | 'fan_zone' | 'compras' | 'transporte' | 'naturaleza';
+  subcategory?: string;
+  city: 'CDMX' | 'GDL' | 'MTY';
+  neighborhood?: string;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  price_level?: number;
+  rating: number;
+  rating_count: number;
+  image_url?: string;
+  opening_hours?: Record<string, unknown>;
+  tags: string[];
+  mundial_relevant: boolean;
+  mundial_info?: Record<string, unknown>;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlaceWithSafety extends Place {
+  safety_score: number;
+  safety_day: number;
+  safety_night: number;
+  safety_tips: string[];
+}
+
+export interface Neighborhood {
+  id: number;
+  name: string;
+  city: 'CDMX' | 'GDL' | 'MTY';
+  description?: string;
+  center_latitude?: number;
+  center_longitude?: number;
+  walkability_score: number;
+  transit_access_score: number;
+  active: boolean;
+}
+
+export interface NeighborhoodSafetyScore {
+  id: number;
+  neighborhood_id: number;
+  overall_score: number;
+  day_score: number;
+  night_score: number;
+  tourist_score: number;
+  tips: string[];
+  sources: string[];
+  confidence: number;
+  updated_at: string;
+}
+
+export interface SafetyInfo {
+  neighborhood_name: string;
+  overall_score: number;
+  day_score: number;
+  night_score: number;
+  tourist_score: number;
+  tips: string[];
+  confidence: number;
+}
+
+export interface Itinerary {
+  id: number;
+  user_id: number;
+  title: string;
+  city: 'CDMX' | 'GDL' | 'MTY';
+  start_date?: string;
+  end_date?: string;
+  duration_days: number;
+  status: 'draft' | 'active' | 'completed';
+  budget_tier?: string;
+  total_estimated_cost: number;
+  currency: string;
+  companions?: string;
+  preferences?: Record<string, unknown>;
+  generated_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ItineraryItem {
+  id: number;
+  itinerary_id: number;
+  place_id?: number;
+  day_number: number;
+  time_slot?: string;
+  end_time?: string;
+  activity_name: string;
+  activity_description?: string;
+  neighborhood?: string;
+  estimated_cost: number;
+  transport_mode?: string;
+  transport_time_min: number;
+  notes?: string;
+  order_index: number;
+  place?: Place;
+}
+
+export interface ItineraryWithItems extends Itinerary {
+  items: ItineraryItem[];
+}
+
+export interface UserSavedPlace {
+  id: number;
+  user_id: number;
+  place_id: number;
+  saved_at: string;
+  notes?: string;
+  place?: Place;
+}
+
+export interface MundialUserPreferences {
+  country_origin?: string;
+  duration_stay?: string;
+  companions?: string;
+  interests?: string[];
+  budget_tier?: string;
+  mundial_focus?: boolean;
+}

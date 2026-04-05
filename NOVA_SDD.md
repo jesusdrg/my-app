@@ -183,8 +183,10 @@ So that Nova can generate a customized itinerary without me filling out complex 
 
 **Technical Specifications:**
 
+IMPORTANT: the agents are in the folder Turismo_agents_copy/, the main agent is the Turismo_agents_copy\chatbot_agent.py file. The agents are created using langgraph and langchain. The other agents in the folder are for generating the itinerary, but they require modifications to be included correctly.
+
 - **Agent Type:** LLM-based conversational agent
-- **Model:** Claude Sonnet 4 (primary), with fallback to Haiku for cost optimization on simple queries
+- **Model:** gpt-4o-mini, with fallback to gpt-4o-mini for cost optimization on simple queries
 - **Context Window:** Maintain last 10 conversation turns
 - **Response Time:** < 3 seconds for conversational responses
 - **Language Support:** Spanish (primary), English (secondary)
@@ -1108,9 +1110,9 @@ Nova employs a **microservices architecture** with a focus on **hybrid AI/ML sys
 
 ### Technology Stack
 
-#### Backend Services
+####  Agents only
 
-**Primary Language:** Python 3.11+
+**Primary Language:** Python 3.12
 - **Rationale:** Rich ecosystem for AI/ML, LangGraph/LangChain support, rapid development
 
 **Secondary Language:** TypeScript (Node.js)
@@ -1120,14 +1122,13 @@ Nova employs a **microservices architecture** with a focus on **hybrid AI/ML sys
 
 1. **Conversational Agent Service:**
    - **Framework:** LangGraph
-   - **LLM:** Claude Sonnet 4 (primary), Haiku (fallback/cost optimization)
+   - **LLM:** gpt-4o-mini
    - **State Management:** LangGraph state persistence + Redis
    - **Deployment:** Docker containers on Kubernetes
 
 2. **Itinerary Generator Service:**
    - **Framework:** LangGraph (for LLM orchestration)
-   - **Language:** Python (FastAPI for API endpoints)
-   - **Dependencies:** Claude API, vector DB client, route optimizer integration
+   - **Language:** Python 
 
 3. **Location Search Service:**
    - **Framework:** FastAPI (Python)
@@ -1171,28 +1172,20 @@ Nova employs a **microservices architecture** with a focus on **hybrid AI/ML sys
 #### Frontend
 
 **Web Application:**
-- **Framework:** React 18 + TypeScript
+- **Framework:** React + TypeScript
 - **State Management:** Zustand or Redux Toolkit
 - **UI Library:** Tailwind CSS + shadcn/ui
 - **Maps:** Mapbox GL JS
 - **Real-time:** Socket.io client
-- **Build:** Vite
 
 **Mobile Applications:**
 
-- **iOS:**
-  - **Language:** Swift + SwiftUI
-  - **Architecture:** MVVM
-  - **Networking:** Alamofire
-  - **Local Storage:** Core Data + SwiftData
-  - **Maps:** MapKit (primary), Mapbox (fallback)
-
-- **Android:**
-  - **Language:** Kotlin + Jetpack Compose
-  - **Architecture:** MVVM with Clean Architecture
-  - **Networking:** Retrofit + OkHttp
-  - **Local Storage:** Room + DataStore
-  - **Maps:** Google Maps SDK (primary), Mapbox (fallback)
+- **Framework:** Expo (React Native)
+- **Language:** TypeScript
+- **Navigation:** Expo Router
+- **State Management:** Zustand or Redux Toolkit
+- **Maps:** React Native Maps + Mapbox SDK
+- **Local Storage:** Expo SQLite + SecureStore
 
 #### Data Storage
 
@@ -2300,6 +2293,9 @@ When evaluating new technologies, frameworks, or services, use these criteria:
 - Test migrations on staging first
 - Backup database before production migration
 
+
+
+
 ---
 
 ### D. Monitoring Checklist
@@ -2385,6 +2381,10 @@ When evaluating new technologies, frameworks, or services, use these criteria:
 **Next Review Date:** 2026-02-22 (or when significant requirements change)
 
 ---
+
+# IMPORTANT
+## These are the most important instructions in light of everything described above. The database is built in PostgreSQL and will be used for everything. Everything that can be handled optimally will be managed within the application. Externally, it only has communication with the agents built with Python. These agents are executed using Langggraph Dev, which already includes Uvicorn and FastAPI, so no additional integration is necessary. We will only create, modify, and debug the existing agents for the app's purpose.
+
 
 **End of Specification-Driven Development Document**
 

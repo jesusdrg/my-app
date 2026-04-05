@@ -258,34 +258,27 @@ export default function ChatScreen() {
           throw new Error('Usuario no encontrado en Supabase');
         }
 
-        // Crear un mensaje bot temporal vacío para el streaming
-        const botMessageId = Date.now() + 1;
-        const initialBotMessage: Message = {
-          id: botMessageId,
-          text: '...', // Indicador inicial
-          sender: 'bot',
-          timestamp: new Date(),
-        };
-
-        setMessages(prev => [...prev, initialBotMessage]);
-
-        // Función para actualizar el mensaje del bot en tiempo real
-        const handleStreamUpdate = (updatedText: string) => {
-          const parsed = parseAgentMessage(updatedText);
-          setMessages(prev =>
-            prev.map(msg =>
-              msg.id === botMessageId
-                ? { ...msg, text: parsed.text, tripIds: parsed.tripIds }
-                : msg
-            )
-          );
-        };
-
-        const response = await AgentsService.streamChatMessage({
+        const response = await AgentsService.sendChatMessage({
           user_id: supabaseUser.id.toString(),
           message: messageToSend,
           thread_id: threadId || undefined,
-        }, handleStreamUpdate);
+        });
+
+        if (!response.message || response.message.trim() === '') {
+          throw new Error('El agente no retorno un mensaje');
+        }
+
+        const finalParsed = parseAgentMessage(response.message);
+
+        const botMessage: Message = {
+          id: Date.now() + 1,
+          text: finalParsed.text,
+          sender: 'bot',
+          timestamp: new Date(),
+          tripIds: finalParsed.tripIds,
+        };
+
+        setMessages(prev => [...prev, botMessage]);
 
         let currentConversationId = conversationId;
 
@@ -304,27 +297,6 @@ export default function ChatScreen() {
 
         if (currentConversationId) {
           await ChatHistoryService.saveMessage(currentConversationId, 'user', messageToSend);
-        }
-
-        if (!response.message || response.message.trim() === '') {
-          // Si por alguna razón llega vacío, mostramos error o lo dejamos como estaba
-          // Pero con el stream ya deberíamos tener algo
-          if (messages.find(m => m.id === botMessageId)?.text === '...') {
-            throw new Error('El agente no retornó un mensaje');
-          }
-        }
-
-        // Asegurarnos que el mensaje final esté actualizado (por si el stream falló el último frame)
-        const finalParsed = parseAgentMessage(response.message);
-        setMessages(prev =>
-          prev.map(msg =>
-            msg.id === botMessageId
-              ? { ...msg, text: finalParsed.text, tripIds: finalParsed.tripIds }
-              : msg
-          )
-        );
-
-        if (currentConversationId) {
           await ChatHistoryService.saveMessage(currentConversationId, 'bot', finalParsed.text);
         }
 

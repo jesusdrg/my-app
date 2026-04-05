@@ -1,653 +1,260 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, ActivityIndicator, Modal, Alert, FlatList, ListRenderItemInfo, TextInput } from 'react-native';
-import { Image } from 'expo-image';
-import { router } from 'expo-router';
-import { IconSymbol } from '@/components/ui/IconSymbol';
-import Animated, { FadeIn, SlideInUp, useAnimatedStyle, useSharedValue, withSpring, withTiming, withRepeat, withSequence, interpolate, runOnJS } from 'react-native-reanimated';
-import { TripsService } from '@/lib/tripsService';
-import { LegacyTrip } from '@/lib/supabase';
 import RecommendationsQuestionnaire from '@/components/RecommendationsQuestionnaire';
+import { IconSymbol } from '@/components/ui/IconSymbol';
+import { PlacesService } from '@/lib/placesService';
+import { RecommendationEngine, ScoredPlace } from '@/lib/recommendationEngine';
+import { PlaceWithSafety, supabase } from '@/lib/supabase';
 import { UserService } from '@/lib/userService';
 import { useUser } from '@clerk/clerk-expo';
-import AgentsService from '@/lib/agentsService';
+import { Image } from 'expo-image';
+import { router } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, FlatList, ListRenderItemInfo, Modal, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
-// Componente de Loader con Animación de Círculos Pulsantes
-const TravelLoader = ({ message = 'Cargando viajes...' }: { message?: string }) => {
-  const circle1Scale = useSharedValue(1);
-  const circle2Scale = useSharedValue(1);
-  const circle3Scale = useSharedValue(1);
-  const circle1Opacity = useSharedValue(0.3);
-  const circle2Opacity = useSharedValue(0.3);
-  const circle3Opacity = useSharedValue(0.3);
-  const rotation = useSharedValue(0);
-  const textOpacity = useSharedValue(0.5);
+const CITY_OPTIONS = ['Todas', 'CDMX', 'GDL', 'MTY'] as const;
 
-  useEffect(() => {
-    // Rotación del icono central
-    rotation.value = withRepeat(
-      withTiming(360, { duration: 3000 }),
-      -1,
-      false
-    );
+const CATEGORY_FILTERS = [
+  { id: 'all', label: 'Todos', icon: 'location.fill' as const },
+  { id: 'estadio', label: 'Estadios', icon: 'location.fill' as const },
+  { id: 'restaurante', label: 'Restaurantes', icon: 'fork.knife' as const },
+  { id: 'bar', label: 'Bares', icon: 'moon.stars.fill' as const },
+  { id: 'hotel', label: 'Hoteles', icon: 'house.fill' as const },
+  { id: 'cultural', label: 'Cultura', icon: 'building.columns' as const },
+  { id: 'fan_zone', label: 'Fan Zones', icon: 'sparkles' as const },
+  { id: 'compras', label: 'Compras', icon: 'bag.fill' as const },
+];
 
-    // Círculo 1 - pulso
-    circle1Scale.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 0 }),
-        withTiming(1.8, { duration: 1200 }),
-      ),
-      -1,
-      false
-    );
-    circle1Opacity.value = withRepeat(
-      withSequence(
-        withTiming(0.6, { duration: 0 }),
-        withTiming(0, { duration: 1200 }),
-      ),
-      -1,
-      false
-    );
+const PRICE_LABELS: Record<number, string> = { 1: '$', 2: '$$', 3: '$$$', 4: '$$$$' };
 
-    // Círculo 2 - pulso con delay
-    setTimeout(() => {
-      circle2Scale.value = withRepeat(
-        withSequence(
-          withTiming(1, { duration: 0 }),
-          withTiming(1.8, { duration: 1200 }),
-        ),
-        -1,
-        false
-      );
-      circle2Opacity.value = withRepeat(
-        withSequence(
-          withTiming(0.6, { duration: 0 }),
-          withTiming(0, { duration: 1200 }),
-        ),
-        -1,
-        false
-      );
-    }, 400);
+function getSafetyColor(score: number): string {
+  if (score >= 8.0) return '#10B981';
+  if (score >= 6.5) return '#F59E0B';
+  return '#EF4444';
+}
 
-    // Círculo 3 - pulso con más delay
-    setTimeout(() => {
-      circle3Scale.value = withRepeat(
-        withSequence(
-          withTiming(1, { duration: 0 }),
-          withTiming(1.8, { duration: 1200 }),
-        ),
-        -1,
-        false
-      );
-      circle3Opacity.value = withRepeat(
-        withSequence(
-          withTiming(0.6, { duration: 0 }),
-          withTiming(0, { duration: 1200 }),
-        ),
-        -1,
-        false
-      );
-    }, 800);
-
-    // Fade in/out del texto
-    textOpacity.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 1500 }),
-        withTiming(0.5, { duration: 1500 })
-      ),
-      -1,
-      true
-    );
-  }, []);
-
-  const circle1Style = useAnimatedStyle(() => {
-    return {
-      transform: [{ scale: circle1Scale.value }],
-      opacity: circle1Opacity.value,
-    };
-  });
-
-  const circle2Style = useAnimatedStyle(() => {
-    return {
-      transform: [{ scale: circle2Scale.value }],
-      opacity: circle2Opacity.value,
-    };
-  });
-
-  const circle3Style = useAnimatedStyle(() => {
-    return {
-      transform: [{ scale: circle3Scale.value }],
-      opacity: circle3Opacity.value,
-    };
-  });
-
-  const rotationStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ rotate: `${rotation.value}deg` }],
-    };
-  });
-
-  const textStyle = useAnimatedStyle(() => {
-    return {
-      opacity: textOpacity.value,
-    };
-  });
-
-  return (
-    <Animated.View style={loaderStyles.container} entering={FadeIn.duration(300)}>
-      <View style={loaderStyles.loaderWrapper}>
-        {/* Círculos pulsantes */}
-        <View style={loaderStyles.circlesContainer}>
-          <Animated.View style={[loaderStyles.circle, circle1Style]} />
-          <Animated.View style={[loaderStyles.circle, circle2Style]} />
-          <Animated.View style={[loaderStyles.circle, circle3Style]} />
-        </View>
-
-        {/* Icono central rotando */}
-        <Animated.View style={[loaderStyles.iconWrapper, rotationStyle]}>
-          <IconSymbol name="airplane" size={50} color="#000000" />
-        </Animated.View>
-      </View>
-
-      {/* Texto animado */}
-      <Animated.Text style={[loaderStyles.loadingText, textStyle]}>
-        {message}
-      </Animated.Text>
-
-      <Text style={loaderStyles.subText}>
-        {message.includes('recomendaciones')
-          ? 'Nuestro agente está analizando tus preferencias...'
-          : 'Preparando experiencias únicas para ti'}
-      </Text>
-    </Animated.View>
-  );
-};
-
-const loaderStyles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 80,
-    backgroundColor: '#FFFFFF',
-  },
-  loaderWrapper: {
-    marginBottom: 60,
-    height: 180,
-    width: 180,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  circlesContainer: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  circle: {
-    position: 'absolute',
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#000000',
-  },
-  iconWrapper: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#000000',
-    boxShadow: '0px 4px 8px rgba(0, 0, 0, 0.15)',
-    elevation: 8,
-    zIndex: 10,
-  },
-  loadingText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  subText: {
-    fontSize: 15,
-    color: '#6B7280',
-    textAlign: 'center',
-    paddingHorizontal: 40,
-    lineHeight: 22,
-  },
-});
-
-// Componente de Tarjeta de Viaje (memoizado para mejor performance)
-const TripCard = React.memo(({
-  trip,
-  isRecommended,
-  isLiked,
+// PlaceCard component
+const PlaceCard = React.memo(({
+  place,
   onPress,
-  onLike
+  onSave,
+  isSaved,
 }: {
-  trip: LegacyTrip;
-  isRecommended: boolean;
-  isLiked: boolean;
+  place: PlaceWithSafety & { score?: number };
   onPress: () => void;
-  onLike: () => void;
+  onSave: () => void;
+  isSaved: boolean;
 }) => {
-  // Memoizar cálculos costosos
-  const locationText = React.useMemo(() => {
-    const displayDestinations = trip.destinations.slice(0, 2).join(', ');
-    return trip.destinations.length > 2
-      ? `${displayDestinations} +${trip.destinations.length - 2} más`
-      : displayDestinations;
-  }, [trip.destinations]);
-
-  const priceText = React.useMemo(() => {
-    const symbol = trip.currency === 'MXN' ? '$' : trip.currency === 'EUR' ? '€' : '$';
-    return `Desde ${symbol}${trip.price_from.toLocaleString()}`;
-  }, [trip.currency, trip.price_from]);
-
-  const displayTags = React.useMemo(() => trip.tags.slice(0, 3), [trip.tags]);
-
-  const imageSource = React.useMemo(() => ({
-    uri: trip.image_url || 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800&q=80'
-  }), [trip.image_url]);
+  const safetyScore = place.safety_score || 0;
+  const safetyColor = getSafetyColor(safetyScore);
 
   return (
-    <View style={[styles.card, isRecommended && styles.cardRecommended]}>
+    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.9}>
       <View style={styles.imageContainer}>
         <Image
-          source={imageSource}
-          placeholder={{ blurhash: trip.blurhash }}
+          source={{ uri: place.image_url || 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800&q=80' }}
           contentFit="cover"
           transition={200}
           cachePolicy="memory-disk"
           style={styles.cardImage}
         />
-        {isRecommended && (
-          <View style={styles.recommendedBadge}>
-            <IconSymbol name="sparkles" size={14} color="#FFFFFF" />
-            <Text style={styles.recommendedBadgeText}>Recomendado</Text>
+        {place.mundial_relevant && (
+          <View style={styles.mundialBadge}>
+            <Text style={styles.mundialBadgeText}>Mundial 2026</Text>
           </View>
         )}
-        <TouchableOpacity
-          style={styles.likeButton}
-          onPress={onLike}
-          activeOpacity={0.7}
-        >
-          <IconSymbol
-            name="heart"
-            size={24}
-            color={isLiked ? '#EF4444' : '#FFFFFF'}
-          />
+        <View style={[styles.safetyBadge, { backgroundColor: safetyColor }]}>
+          <IconSymbol name="shield.fill" size={10} color="#FFFFFF" />
+          <Text style={styles.safetyBadgeText}>{safetyScore.toFixed(1)}</Text>
+        </View>
+        <TouchableOpacity style={styles.saveButton} onPress={onSave} activeOpacity={0.7}>
+          <IconSymbol name="heart" size={22} color={isSaved ? '#EF4444' : '#FFFFFF'} />
         </TouchableOpacity>
       </View>
       <View style={styles.cardContent}>
-        <Text style={styles.cardTitle} numberOfLines={2}>{trip.title}</Text>
-        <Text style={styles.cardLocation} numberOfLines={1}>
-          {locationText}
+        <View style={styles.cardTopRow}>
+          <Text style={styles.cardTitle} numberOfLines={1}>{place.name}</Text>
+          {place.price_level && (
+            <Text style={styles.priceLabel}>{PRICE_LABELS[place.price_level]}</Text>
+          )}
+        </View>
+        <Text style={styles.cardNeighborhood} numberOfLines={1}>
+          {place.neighborhood ? `${place.neighborhood}, ${place.city}` : place.city}
         </Text>
-        <Text style={styles.cardDescription} numberOfLines={3}>{trip.description}</Text>
-
-        <View style={styles.cardInfo}>
-          <View style={styles.infoItem}>
-            <IconSymbol name="dollarsign" size={16} color="#6B7280" />
-            <Text style={styles.infoText}>{priceText}</Text>
+        <Text style={styles.cardDescription} numberOfLines={2}>{place.short_description || place.description}</Text>
+        <View style={styles.cardFooter}>
+          <View style={styles.ratingContainer}>
+            <IconSymbol name="star.fill" size={14} color="#F59E0B" />
+            <Text style={styles.ratingText}>{place.rating?.toFixed(1) || '---'}</Text>
+            {place.rating_count > 0 && (
+              <Text style={styles.ratingCount}>({place.rating_count > 999 ? `${(place.rating_count / 1000).toFixed(1)}k` : place.rating_count})</Text>
+            )}
           </View>
-          <View style={styles.infoItem}>
-            <IconSymbol name="calendar" size={16} color="#6B7280" />
-            <Text style={styles.infoText}>{trip.duration_days} días</Text>
+          <View style={styles.categoryBadge}>
+            <Text style={styles.categoryBadgeText}>{place.category}</Text>
           </View>
         </View>
-
-        {trip.variants && trip.variants.length > 0 && (
-          <View style={styles.variantsIndicator}>
-            <IconSymbol name="calendar.badge.clock" size={14} color="#6B7280" />
-            <Text style={styles.variantsText}>{trip.variants.length} fechas disponibles</Text>
-          </View>
-        )}
-
-        <View style={styles.tagsContainer}>
-          {displayTags.map((tag, tagIndex) => (
-            <View key={`${trip.id}-${tagIndex}`} style={styles.tag}>
-              <Text style={styles.tagText}>{tag}</Text>
-            </View>
-          ))}
-        </View>
-
-        <TouchableOpacity
-          style={styles.selectButton}
-          onPress={onPress}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.selectButtonText}>Ver Viaje</Text>
-        </TouchableOpacity>
       </View>
-    </View>
-  );
-}, (prevProps, nextProps) => {
-  // Función de comparación personalizada para optimizar re-renders
-  return (
-    prevProps.trip.id === nextProps.trip.id &&
-    prevProps.isRecommended === nextProps.isRecommended &&
-    prevProps.isLiked === nextProps.isLiked &&
-    prevProps.trip.price_from === nextProps.trip.price_from &&
-    prevProps.trip.title === nextProps.trip.title
+    </TouchableOpacity>
   );
 });
 
 export default function RecommendationsScreen() {
   const { user } = useUser();
-  const [trips, setTrips] = useState<LegacyTrip[]>([]);
+  const [places, setPlaces] = useState<PlaceWithSafety[]>([]);
+  const [scoredPlaces, setScoredPlaces] = useState<ScoredPlace[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showQuestionnaire, setShowQuestionnaire] = useState(false);
-  const [questionnaireAnswers, setQuestionnaireAnswers] = useState<{ [key: number]: string } | null>(null);
-  const [likedTrips, setLikedTrips] = useState<Set<number>>(new Set());
+  const [savedPlaceIds, setSavedPlaceIds] = useState<Set<number>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCity, setSelectedCity] = useState<string>('Todas');
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [showAIButton, setShowAIButton] = useState(false);
-  const [hasShownAIButton, setHasShownAIButton] = useState(false);
   const [showFiltersModal, setShowFiltersModal] = useState(false);
-  const [recommendedTripIds, setRecommendedTripIds] = useState<number[]>([]);
-  const [processingRecommendations, setProcessingRecommendations] = useState(false);
-
-  const aiButtonOpacity = useSharedValue(0);
-  const aiButtonTranslateY = useSharedValue(100);
-  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const filterCategories = [
-    { id: 'aventura', label: 'Aventura', icon: 'figure.hiking' },
-    { id: 'cultura', label: 'Cultura', icon: 'building.columns' },
-    { id: 'playa', label: 'Playa', icon: 'beach.umbrella' },
-    { id: 'montaña', label: 'Montaña', icon: 'mountain.2' },
-    { id: 'ciudad', label: 'Ciudad', icon: 'building.2' },
-    { id: 'espiritual', label: 'Espiritual', icon: 'sparkles' },
-    { id: 'naturaleza', label: 'Naturaleza', icon: 'leaf' },
-    { id: 'romántico', label: 'Romántico', icon: 'heart' },
-    { id: 'familia', label: 'Familia', icon: 'person.3' },
-    { id: 'gastronomía', label: 'Gastronomía', icon: 'fork.knife' },
-  ];
+  const [hasPreferences, setHasPreferences] = useState(false);
 
   useEffect(() => {
-    loadTrips();
+    loadPlaces();
+    loadSavedPlaces();
+    checkPreferences();
   }, []);
 
   useEffect(() => {
-    // Inicializar los valores en 0 y 100 al montar el componente
-    aiButtonOpacity.value = 0;
-    aiButtonTranslateY.value = 100;
-  }, []);
+    loadPlaces();
+  }, [selectedCity]);
 
-  useEffect(() => {
-    if (showAIButton) {
-      // Animar la aparición
-      aiButtonOpacity.value = withTiming(1, { duration: 500 });
-      aiButtonTranslateY.value = withSpring(0, {
-        damping: 20,
-        stiffness: 150,
-      });
-
-      // Auto-ocultar después de 15 segundos
-      hideTimeoutRef.current = setTimeout(() => {
-        hideAIButton();
-      }, 15000);
-    } else {
-      // Animar la desaparición
-      aiButtonOpacity.value = withTiming(0, { duration: 300 });
-      aiButtonTranslateY.value = withTiming(100, { duration: 300 });
-    }
-
-    return () => {
-      if (hideTimeoutRef.current) {
-        clearTimeout(hideTimeoutRef.current);
+  const checkPreferences = async () => {
+    if (!user) return;
+    try {
+      const supabaseUser = await UserService.getUserByClerkId(user.id);
+      if (supabaseUser) {
+        const prefs = await UserService.getTravelPreferences(supabaseUser.id);
+        setHasPreferences(prefs?.completed || false);
       }
-    };
-  }, [showAIButton]);
-
-  const hideAIButton = () => {
-    setShowAIButton(false);
-    setHasShownAIButton(true);
+    } catch (e) {
+      console.error('Error checking preferences:', e);
+    }
   };
 
-  const handleExploreWithAI = () => {
-    setShowQuestionnaire(true);
-  };
-
-  const loadTrips = async () => {
+  const loadPlaces = async () => {
     try {
       setLoading(true);
       setError(null);
-      console.log(' Iniciando carga de viajes...');
-      const data = await TripsService.getAllTrips();
-      console.log(' Viajes cargados:', data.length);
-      setTrips(data);
+      const city = selectedCity === 'Todas' ? undefined : selectedCity;
+      const data = await PlacesService.getPlaces(city, undefined, undefined, false, 100);
+      setPlaces(data);
     } catch (err) {
-      setError('Error cargando viajes');
-      console.error(' Error loading trips:', err);
+      setError('Error cargando lugares');
+      console.error('Error loading places:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleTripSelect = useCallback((trip: LegacyTrip) => {
-    router.push({
-      pathname: '/trip-detail',
-      params: { tripId: trip.id, tripData: JSON.stringify(trip) }
-    });
-  }, [router]);
-
-  const handleQuestionnaireComplete = async (answers: { [key: number]: string }) => {
-    setQuestionnaireAnswers(answers);
-    setShowQuestionnaire(false);
-    console.log('Respuestas del cuestionario de recomendaciones:', answers);
-
-    // Llamar al agente de filtrado para obtener recomendaciones
-    if (!user) {
-      console.error('No user found');
-      return;
-    }
-
-    setProcessingRecommendations(true);
-
+  const loadSavedPlaces = async () => {
+    if (!user) return;
     try {
-      // Obtener el usuario de Supabase con múltiples reintentos (el AuthGuard puede estar sincronizando)
-      let supabaseUser = null;
-      let retries = 0;
-      const maxRetries = 6;
-
-      while (!supabaseUser && retries < maxRetries) {
-        supabaseUser = await UserService.getUserByClerkId(user.id);
-
-        if (!supabaseUser) {
-          retries++;
-          console.log(`⏳ Usuario no encontrado, esperando sincronización... (intento ${retries}/${maxRetries})`);
-          await new Promise(resolve => setTimeout(resolve, 1500));
-        }
+      const supabaseUser = await UserService.getUserByClerkId(user.id);
+      if (supabaseUser) {
+        const saved = await PlacesService.getSavedPlaces(supabaseUser.id);
+        setSavedPlaceIds(new Set(saved.map(s => s.place_id)));
       }
-
-      if (!supabaseUser) {
-        console.error(' User not found in Supabase after', maxRetries, 'retries');
-        Alert.alert(
-          'Error de Sincronización',
-          'No se pudo sincronizar tu usuario. Por favor cierra sesión y vuelve a iniciar.',
-          [{ text: 'OK' }]
-        );
-        setProcessingRecommendations(false);
-        return;
-      }
-
-      console.log(' Usuario de Supabase encontrado:', supabaseUser.id);
-      console.log('Obteniendo recomendaciones del agente de filtrado...');
-
-      // Llamar al agente de filtrado de viajes
-      const recommendations = await AgentsService.getTravelRecommendations({
-        user_id: supabaseUser.id.toString(),
-        cuestionario: answers,
-      });
-
-      console.log('Recomendaciones recibidas:', recommendations);
-
-      // Guardar los IDs recomendados
-      setRecommendedTripIds(recommendations.viajes_recomendados || []);
-
-      // Mostrar mensaje de éxito
-      Alert.alert(
-        '¡Recomendaciones Listas!',
-        `Se encontraron ${recommendations.total_recomendados || 0} viajes perfectos para ti. Los verás destacados en la lista.`,
-        [{ text: 'Ver Viajes' }]
-      );
-    } catch (error) {
-      console.error('Error obteniendo recomendaciones:', error);
-      Alert.alert(
-        'Error',
-        'No se pudieron obtener las recomendaciones. Por favor intenta nuevamente.',
-        [{ text: 'OK' }]
-      );
-    } finally {
-      setProcessingRecommendations(false);
+    } catch (e) {
+      console.error('Error loading saved places:', e);
     }
   };
 
-  const handleLike = useCallback((tripId: number) => {
-    setLikedTrips(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(tripId)) {
-        newSet.delete(tripId);
-      } else {
-        newSet.add(tripId);
-      }
-      return newSet;
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) {
+      loadPlaces();
+      return;
+    }
+    setLoading(true);
+    try {
+      const city = selectedCity === 'Todas' ? undefined : selectedCity;
+      const results = await PlacesService.searchPlaces(searchQuery, city);
+      setPlaces(results as PlaceWithSafety[]);
+    } catch (e) {
+      console.error('Search error:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleQuestionnaireComplete = async (answers: {
+    cities: string[];
+    interests: string[];
+    budgetTier: string;
+    safetyPriority: string;
+    accommodation: string;
+    specialWish: string;
+  }) => {
+    setShowQuestionnaire(false);
+    setHasPreferences(true);
+
+    // Score places with the new preferences
+    const scored = RecommendationEngine.rankPlaces(places, {
+      interests: answers.interests,
+      budgetTier: answers.budgetTier,
+      safetyPriority: answers.safetyPriority,
+    });
+    setScoredPlaces(scored);
+  };
+
+  const handleSavePlace = useCallback(async (placeId: number) => {
+    if (!user) return;
+    try {
+      const supabaseUser = await UserService.getUserByClerkId(user.id);
+      if (!supabaseUser) return;
+      const saved = await PlacesService.toggleSavedPlace(supabaseUser.id, placeId);
+      setSavedPlaceIds(prev => {
+        const next = new Set(prev);
+        if (saved) next.add(placeId);
+        else next.delete(placeId);
+        return next;
+      });
+    } catch (e) {
+      console.error('Error toggling save:', e);
+    }
+  }, [user]);
+
+  const handlePlacePress = useCallback((place: PlaceWithSafety) => {
+    router.push({
+      pathname: '/place-detail',
+      params: { placeId: place.id, placeData: JSON.stringify(place) },
     });
   }, []);
 
-  const handleScroll = useCallback((event: any) => {
-    const scrollY = event.nativeEvent.contentOffset.y;
+  // Filter and sort places
+  const filteredPlaces = useMemo(() => {
+    let result = scoredPlaces.length > 0 ? scoredPlaces : places;
 
-    if (scrollY > 100 && !showAIButton && !hasShownAIButton) {
-      setShowAIButton(true);
-    }
-  }, [showAIButton, hasShownAIButton]);
-
-  const aiButtonStyle = useAnimatedStyle(() => {
-    return {
-      opacity: aiButtonOpacity.value,
-      transform: [{ translateY: aiButtonTranslateY.value }],
-    };
-  });
-
-  // Calcular filteredTrips primero, antes de definir los callbacks que lo usan
-  // IMPORTANTE: Esto debe estar antes de cualquier return condicional para evitar errores de hooks
-  const filteredTrips = trips.filter(trip => {
-    // Búsqueda por texto en título, destinos, descripción, categoría y tags
-    const searchLower = searchQuery.toLowerCase();
-    const matchesSearch = searchQuery === '' ||
-      trip.title.toLowerCase().includes(searchLower) ||
-      trip.destinations.some(dest => dest.toLowerCase().includes(searchLower)) ||
-      trip.description.toLowerCase().includes(searchLower) ||
-      trip.category.toLowerCase().includes(searchLower) ||
-      trip.tags.some(tag => tag.toLowerCase().includes(searchLower));
-
-    // Si no hay búsqueda de texto, no mostrar ningún resultado
-    if (!matchesSearch) return false;
-
-    // Filtro de categoría
-    if (selectedCategory === 'all') return true;
-
-    if (selectedCategory === 'liked') {
-      return likedTrips.has(trip.id);
+    if (selectedCategory !== 'all') {
+      result = result.filter(p => p.category === selectedCategory);
     }
 
-    if (selectedCategory === 'recommended') {
-      return recommendedTripIds.includes(trip.id);
-    }
-
-    // Filtro por categoría o tags
-    const matchesCategory =
-      trip.category.toLowerCase().includes(selectedCategory.toLowerCase()) ||
-      trip.tags.some(tag => tag.toLowerCase().includes(selectedCategory.toLowerCase()));
-
-    return matchesCategory;
-  }).sort((a, b) => {
-    // Mostrar primero los viajes recomendados
-    const aIsRecommended = recommendedTripIds.includes(a.id);
-    const bIsRecommended = recommendedTripIds.includes(b.id);
-
-    if (aIsRecommended && !bIsRecommended) return -1;
-    if (!aIsRecommended && bIsRecommended) return 1;
-    return 0;
-  });
-
-  // Callbacks que dependen de filteredTrips
-  const renderTripCard = useCallback(({ item }: ListRenderItemInfo<LegacyTrip>) => {
-    const isRecommended = recommendedTripIds.includes(item.id);
-    const isLiked = likedTrips.has(item.id);
-
-    return (
-      <TripCard
-        trip={item}
-        isRecommended={isRecommended}
-        isLiked={isLiked}
-        onPress={() => handleTripSelect(item)}
-        onLike={() => handleLike(item.id)}
-      />
-    );
-  }, [recommendedTripIds, likedTrips, handleLike, handleTripSelect]);
-
-  const keyExtractor = useCallback((item: LegacyTrip) => item.id.toString(), []);
-
-  const ListHeaderComponent = useCallback(() => (
-    <Text style={styles.resultsText}>
-      {filteredTrips.length} destinos encontrados
-    </Text>
-  ), [filteredTrips.length]);
-
-  const ListEmptyComponent = useCallback(() => {
-    if (loading) return <View style={{ height: 400 }} />;
-    if (error) {
-      return (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={loadTrips}>
-            <Text style={styles.retryButtonText}>Reintentar</Text>
-          </TouchableOpacity>
-        </View>
+    if (searchQuery && !loading) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(p =>
+        p.name.toLowerCase().includes(q) ||
+        (p.neighborhood || '').toLowerCase().includes(q) ||
+        (p.description || '').toLowerCase().includes(q) ||
+        p.tags.some(t => t.toLowerCase().includes(q))
       );
     }
 
-    // Mensaje personalizado según el contexto
-    let emptyMessage = 'No se encontraron viajes disponibles';
-    if (searchQuery) {
-      emptyMessage = `No encontramos viajes que coincidan con "${searchQuery}"`;
-    } else if (selectedCategory === 'liked') {
-      emptyMessage = 'Aún no tienes viajes favoritos';
-    } else if (selectedCategory === 'recommended') {
-      emptyMessage = 'No hay recomendaciones disponibles';
-    } else if (selectedCategory !== 'all') {
-      const category = filterCategories.find(c => c.id === selectedCategory);
-      emptyMessage = `No hay viajes en la categoría "${category?.label || selectedCategory}"`;
-    }
+    return result;
+  }, [places, scoredPlaces, selectedCategory, searchQuery, loading]);
 
-    return (
-      <View style={styles.emptyContainer}>
-        <IconSymbol name="magnifyingglass" size={48} color="#D1D5DB" />
-        <Text style={styles.emptyText}>{emptyMessage}</Text>
-        {(searchQuery || selectedCategory !== 'all') && (
-          <TouchableOpacity
-            style={styles.clearSearchButton}
-            onPress={() => {
-              setSearchQuery('');
-              setSelectedCategory('all');
-            }}
-          >
-            <Text style={styles.clearSearchButtonText}>Limpiar búsqueda</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-    );
-  }, [loading, error, searchQuery, selectedCategory, filterCategories]);
+  const renderPlaceCard = useCallback(({ item }: ListRenderItemInfo<PlaceWithSafety>) => (
+    <PlaceCard
+      place={item}
+      onPress={() => handlePlacePress(item)}
+      onSave={() => handleSavePlace(item.id)}
+      isSaved={savedPlaceIds.has(item.id)}
+    />
+  ), [savedPlaceIds, handlePlacePress, handleSavePlace]);
 
-  // Return condicional del cuestionario DESPUÉS de todos los hooks
+  const keyExtractor = useCallback((item: PlaceWithSafety) => item.id.toString(), []);
+
   if (showQuestionnaire) {
     return <RecommendationsQuestionnaire onComplete={handleQuestionnaireComplete} />;
   }
@@ -660,11 +267,28 @@ export default function RecommendationsScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Explora</Text>
-          <Text style={styles.subtitle}>Encuentra tu destino ideal</Text>
+          <Text style={styles.subtitle}>Descubre Mexico - Mundial 2026</Text>
         </View>
-        <TouchableOpacity style={styles.aiIconButton} onPress={handleExploreWithAI}>
-          <IconSymbol name="sparkles" size={22} color="#FFFFFF" />
+        <TouchableOpacity style={styles.aiIconButton} onPress={() => setShowQuestionnaire(true)}>
+          <IconSymbol name="sparkles" size={20} color="#FFFFFF" />
         </TouchableOpacity>
+      </View>
+
+      {/* City Selector */}
+      <View style={styles.citySelectorContainer}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.citySelectorContent}>
+          {CITY_OPTIONS.map(city => (
+            <TouchableOpacity
+              key={city}
+              style={[styles.cityChip, selectedCity === city && styles.cityChipActive]}
+              onPress={() => setSelectedCity(city)}
+            >
+              <Text style={[styles.cityChipText, selectedCity === city && styles.cityChipTextActive]}>
+                {city}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </View>
 
       {/* Search Bar */}
@@ -672,15 +296,16 @@ export default function RecommendationsScreen() {
         <IconSymbol name="magnifyingglass" size={20} color="#9CA3AF" />
         <TextInput
           style={styles.searchInput}
-          placeholder="Busca tu destino soñado..."
+          placeholder="Busca restaurantes, bares, estadios..."
           placeholderTextColor="#9CA3AF"
           value={searchQuery}
           onChangeText={setSearchQuery}
+          onSubmitEditing={handleSearch}
           autoCorrect={false}
           autoCapitalize="none"
         />
         {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
+          <TouchableOpacity onPress={() => { setSearchQuery(''); loadPlaces(); }}>
             <IconSymbol name="xmark.circle.fill" size={20} color="#9CA3AF" />
           </TouchableOpacity>
         )}
@@ -688,634 +313,161 @@ export default function RecommendationsScreen() {
 
       {/* Category Filters */}
       <View style={styles.categoriesWrapper}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.categoriesContainer}
-          contentContainerStyle={styles.categoriesContent}
-        >
-          <TouchableOpacity
-            style={[styles.categoryChip, selectedCategory === 'all' && styles.categoryChipActive]}
-            onPress={() => setSelectedCategory('all')}
-          >
-            <IconSymbol
-              name="location.fill"
-              size={16}
-              color={selectedCategory === 'all' ? '#FFFFFF' : '#374151'}
-            />
-            <Text style={[styles.categoryText, selectedCategory === 'all' && styles.categoryTextActive]}>
-              Todos
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.categoryChip, selectedCategory === 'liked' && styles.categoryChipActive]}
-            onPress={() => setSelectedCategory('liked')}
-          >
-            <IconSymbol
-              name="heart"
-              size={16}
-              color={selectedCategory === 'liked' ? '#FFFFFF' : '#374151'}
-            />
-            <Text style={[styles.categoryText, selectedCategory === 'liked' && styles.categoryTextActive]}>
-              Me gusta
-            </Text>
-          </TouchableOpacity>
-          {recommendedTripIds.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesContainer} contentContainerStyle={styles.categoriesContent}>
+          {CATEGORY_FILTERS.map(cat => (
             <TouchableOpacity
-              style={[styles.categoryChip, selectedCategory === 'recommended' && styles.categoryChipActive]}
-              onPress={() => setSelectedCategory('recommended')}
+              key={cat.id}
+              style={[styles.categoryChip, selectedCategory === cat.id && styles.categoryChipActive]}
+              onPress={() => setSelectedCategory(cat.id)}
             >
-              <IconSymbol
-                name="sparkles"
-                size={16}
-                color={selectedCategory === 'recommended' ? '#FFFFFF' : '#374151'}
-              />
-              <Text style={[styles.categoryText, selectedCategory === 'recommended' && styles.categoryTextActive]}>
-                Recomendados
+              <Text style={[styles.categoryText, selectedCategory === cat.id && styles.categoryTextActive]}>
+                {cat.label}
               </Text>
             </TouchableOpacity>
-          )}
+          ))}
         </ScrollView>
-        <TouchableOpacity
-          style={[
-            styles.filterChip,
-            selectedCategory !== 'all' && selectedCategory !== 'liked' && selectedCategory !== 'recommended' && styles.filterChipActive
-          ]}
-          onPress={() => setShowFiltersModal(true)}
-        >
-          <IconSymbol
-            name="slider.horizontal.3"
-            size={18}
-            color={selectedCategory !== 'all' && selectedCategory !== 'liked' && selectedCategory !== 'recommended' ? '#FFFFFF' : '#111827'}
-          />
-          {selectedCategory !== 'all' && selectedCategory !== 'liked' && selectedCategory !== 'recommended' && (
-            <View style={styles.filterBadge}>
-              <Text style={styles.filterBadgeText}>1</Text>
-            </View>
-          )}
-        </TouchableOpacity>
       </View>
 
-      {/* Filters Modal */}
-      <Modal
-        visible={showFiltersModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowFiltersModal(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowFiltersModal(false)}
-        >
-          <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Filtros</Text>
-              <View style={styles.modalHeaderRight}>
-                {selectedCategory !== 'all' && selectedCategory !== 'liked' && selectedCategory !== 'recommended' && (
-                  <TouchableOpacity
-                    style={styles.clearFiltersButton}
-                    onPress={() => {
-                      setSelectedCategory('all');
-                      setShowFiltersModal(false);
-                    }}
-                  >
-                    <Text style={styles.clearFiltersText}>Limpiar</Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity onPress={() => setShowFiltersModal(false)}>
-                  <IconSymbol name="chevron.down" size={24} color="#111827" />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <ScrollView style={styles.filtersList}>
-              {filterCategories.map((filter) => (
-                <TouchableOpacity
-                  key={filter.id}
-                  style={[
-                    styles.filterItem,
-                    selectedCategory === filter.id && styles.filterItemActive
-                  ]}
-                  onPress={() => {
-                    setSelectedCategory(filter.id);
-                    setShowFiltersModal(false);
-                  }}
-                >
-                  <View style={styles.filterItemLeft}>
-                    <IconSymbol
-                      name={filter.icon as any}
-                      size={20}
-                      color={selectedCategory === filter.id ? '#FFFFFF' : '#374151'}
-                    />
-                    <Text style={[
-                      styles.filterItemText,
-                      selectedCategory === filter.id && styles.filterItemTextActive
-                    ]}>
-                      {filter.label}
-                    </Text>
-                  </View>
-                  {selectedCategory === filter.id && (
-                    <View style={styles.checkmark}>
-                      <Text style={styles.checkmarkText}>✓</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
+      {/* Personalization prompt */}
+      {!hasPreferences && !loading && (
+        <TouchableOpacity style={styles.personalizeBar} onPress={() => setShowQuestionnaire(true)}>
+          <IconSymbol name="sparkles" size={16} color="#000" />
+          <Text style={styles.personalizeText}>Personaliza tus recomendaciones</Text>
+          <IconSymbol name="chevron.right" size={14} color="#6B7280" />
         </TouchableOpacity>
-      </Modal>
+      )}
 
+      {/* Results count */}
+      <Text style={styles.resultsText}>
+        {filteredPlaces.length} lugares encontrados
+      </Text>
+
+      {/* Places list */}
       <FlatList
-        data={filteredTrips}
-        renderItem={renderTripCard}
+        data={filteredPlaces}
+        renderItem={renderPlaceCard}
         keyExtractor={keyExtractor}
-        ListHeaderComponent={ListHeaderComponent}
-        ListEmptyComponent={ListEmptyComponent}
         contentContainerStyle={styles.flatListContent}
         showsVerticalScrollIndicator={false}
-        onScroll={handleScroll}
-        scrollEventThrottle={16}
         removeClippedSubviews={true}
-        maxToRenderPerBatch={3}
-        updateCellsBatchingPeriod={100}
-        initialNumToRender={3}
+        maxToRenderPerBatch={4}
+        initialNumToRender={4}
         windowSize={5}
-        getItemLayout={(data, index) => ({
-          length: 520,
-          offset: 520 * index,
-          index,
-        })}
+        ListEmptyComponent={
+          loading ? (
+            <View style={styles.loaderContainer}>
+              <ActivityIndicator size="large" color="#000000" />
+              <Text style={styles.loaderText}>Cargando lugares...</Text>
+            </View>
+          ) : error ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.errorText}>{error}</Text>
+              <TouchableOpacity style={styles.retryButton} onPress={loadPlaces}>
+                <Text style={styles.retryButtonText}>Reintentar</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.emptyContainer}>
+              <IconSymbol name="magnifyingglass" size={48} color="#D1D5DB" />
+              <Text style={styles.emptyText}>No se encontraron lugares</Text>
+              <TouchableOpacity style={styles.clearButton} onPress={() => { setSearchQuery(''); setSelectedCategory('all'); loadPlaces(); }}>
+                <Text style={styles.clearButtonText}>Limpiar filtros</Text>
+              </TouchableOpacity>
+            </View>
+          )
+        }
       />
-
-      {/* Botón flotante "Explorar con IA" - solo renderizar cuando está visible */}
-      {/* COMENTADO: Botón que aparece al hacer scroll > 100px y se oculta automáticamente después de 15 segundos
-      {showAIButton && (
-        <Animated.View style={[styles.floatingButtonContainer, aiButtonStyle, { pointerEvents: 'auto' }]}>
-          <TouchableOpacity style={styles.aiButton} onPress={handleExploreWithAI}>
-            <IconSymbol name="magnifyingglass" size={20} color="#FFFFFF" />
-            <Text style={styles.aiButtonText}>Explorar Viaje con IA</Text>
-            <IconSymbol name="chevron.right" size={20} color="#FFFFFF" />
-          </TouchableOpacity>
-        </Animated.View>
-      )}
-      */}
-
-      {/* Loader de Carga Inicial - Overlay completo */}
-      {loading && (
-        <View style={styles.fullScreenLoader}>
-          <TravelLoader message="Cargando viajes..." />
-        </View>
-      )}
-
-      {/* Loader de Recomendaciones - Overlay completo */}
-      {processingRecommendations && (
-        <View style={styles.fullScreenLoader}>
-          <TravelLoader message="Procesando recomendaciones..." />
-        </View>
-      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 60,
-    paddingBottom: 16,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 24, paddingTop: 60, paddingBottom: 12,
   },
+  title: { fontSize: 36, fontWeight: 'bold', color: '#111827', marginBottom: 4 },
+  subtitle: { fontSize: 15, color: '#9CA3AF' },
   aiIconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#000000',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+    width: 44, height: 44, borderRadius: 22, backgroundColor: '#000000',
+    justifyContent: 'center', alignItems: 'center',
   },
-  title: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 4,
+  citySelectorContainer: { paddingHorizontal: 24, marginBottom: 12 },
+  citySelectorContent: { gap: 8 },
+  cityChip: {
+    paddingHorizontal: 20, paddingVertical: 8, borderRadius: 20,
+    backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB',
   },
-  subtitle: {
-    fontSize: 15,
-    color: '#9CA3AF',
-  },
+  cityChipActive: { backgroundColor: '#000000', borderColor: '#000000' },
+  cityChipText: { fontSize: 14, fontWeight: '600', color: '#374151' },
+  cityChipTextActive: { color: '#FFFFFF' },
   searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F3F4F6',
-    marginHorizontal: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 25,
-    gap: 12,
-    marginBottom: 16,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6',
+    marginHorizontal: 24, paddingHorizontal: 16, paddingVertical: 12,
+    borderRadius: 25, gap: 12, marginBottom: 12,
   },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    color: '#111827',
-    paddingVertical: 0,
-  },
-  categoriesWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingLeft: 24,
-    paddingRight: 24,
-    marginBottom: 20,
-    gap: 12,
-  },
-  categoriesContainer: {
-    flex: 1,
-    maxHeight: 40,
-  },
-  categoriesContent: {
-    gap: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  searchInput: { flex: 1, fontSize: 15, color: '#111827', paddingVertical: 0 },
+  categoriesWrapper: { paddingLeft: 24, paddingRight: 24, marginBottom: 8 },
+  categoriesContainer: { maxHeight: 40 },
+  categoriesContent: { gap: 8, flexDirection: 'row', alignItems: 'center' },
   categoryChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 6,
+    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F3F4F6',
   },
-  categoryChipActive: {
-    backgroundColor: '#000000',
+  categoryChipActive: { backgroundColor: '#000000' },
+  categoryText: { fontSize: 13, fontWeight: '500', color: '#374151' },
+  categoryTextActive: { color: '#FFFFFF' },
+  personalizeBar: {
+    flexDirection: 'row', alignItems: 'center', marginHorizontal: 24,
+    paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12,
+    backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB',
+    gap: 8, marginBottom: 12,
   },
-  categoryText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#374151',
-  },
-  categoryTextActive: {
-    color: '#FFFFFF',
-  },
-  filterChip: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-  },
-  filterChipActive: {
-    backgroundColor: '#111827',
-  },
-  filterBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    backgroundColor: '#EF4444',
-    borderRadius: 10,
-    width: 20,
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  filterBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  scrollContainer: {
-    flex: 1,
-  },
-  flatListContent: {
-    paddingHorizontal: 24,
-    paddingBottom: 100,
-  },
-  scrollContent: {
-    paddingHorizontal: 24,
-    paddingBottom: 100,
-  },
-  variantsIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 14,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-  },
-  variantsText: {
-    fontSize: 13,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  resultsText: {
-    fontSize: 13,
-    color: '#9CA3AF',
-    marginBottom: 16,
-  },
+  personalizeText: { flex: 1, fontSize: 14, fontWeight: '500', color: '#374151' },
+  resultsText: { fontSize: 13, color: '#9CA3AF', paddingHorizontal: 24, marginBottom: 8 },
+  flatListContent: { paddingHorizontal: 24, paddingBottom: 100 },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    marginBottom: 20,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
-    elevation: 4,
-    overflow: 'hidden',
+    backgroundColor: '#FFFFFF', borderRadius: 16, marginBottom: 20,
+    overflow: 'hidden', borderWidth: 1, borderColor: '#F3F4F6',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 4,
   },
-  cardRecommended: {
-    borderWidth: 2,
-    borderColor: '#F59E0B',
-    boxShadow: '0px 2px 8px rgba(245, 158, 11, 0.2)',
+  imageContainer: { position: 'relative' },
+  cardImage: { width: '100%', height: 180 },
+  mundialBadge: {
+    position: 'absolute', top: 12, left: 12,
+    backgroundColor: '#D4AF37', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
   },
-  recommendedBadge: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F59E0B',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    gap: 4,
+  mundialBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
+  safetyBadge: {
+    position: 'absolute', bottom: 12, left: 12,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, gap: 4,
   },
-  recommendedBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
+  safetyBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: 'bold' },
+  saveButton: {
+    position: 'absolute', top: 12, right: 12,
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)', justifyContent: 'center', alignItems: 'center',
   },
-  imageContainer: {
-    position: 'relative',
-  },
-  cardImage: {
-    width: '100%',
-    height: 200,
-  },
-  likeButton: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  cardContent: {
-    padding: 20,
-  },
-  cardTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  cardLocation: {
-    fontSize: 15,
-    color: '#6B7280',
-    marginBottom: 12,
-  },
-  cardDescription: {
-    fontSize: 14,
-    color: '#374151',
-    lineHeight: 20,
-    marginBottom: 14,
-  },
-  cardInfo: {
-    flexDirection: 'row',
-    marginBottom: 14,
-  },
-  infoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 24,
-  },
-  infoText: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginLeft: 4,
-  },
-  tagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
-  },
-  tag: {
-    backgroundColor: '#E5E7EB',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 16,
-  },
-  tagText: {
-    fontSize: 12,
-    color: '#374151',
-    fontWeight: '600',
-  },
-  selectButton: {
-    backgroundColor: '#000000',
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  selectButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  floatingButtonContainer: {
-    position: 'absolute',
-    bottom: 24,
-    left: 24,
-    right: 24,
-  },
-  aiButton: {
-    flexDirection: 'row',
-    backgroundColor: '#000000',
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    boxShadow: '0px 4px 8px rgba(0, 0, 0, 0.3)',
-    elevation: 8,
-  },
-  aiButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 60,
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#6B7280',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 24,
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#EF4444',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  retryButton: {
-    backgroundColor: '#000000',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  retryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 60,
-    gap: 16,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#6B7280',
-    textAlign: 'center',
-    paddingHorizontal: 40,
-  },
-  clearSearchButton: {
-    marginTop: 8,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    backgroundColor: '#111827',
-    borderRadius: 12,
-  },
-  clearSearchButtonText: {
-    fontSize: 15,
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 20,
-    paddingBottom: 40,
-    maxHeight: '70%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  modalHeaderRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  clearFiltersButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-  },
-  clearFiltersText: {
-    fontSize: 14,
-    color: '#111827',
-    fontWeight: '600',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  filtersList: {
-    paddingHorizontal: 24,
-    paddingTop: 16,
-  },
-  filterItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginBottom: 8,
-    backgroundColor: '#F9FAFB',
-  },
-  filterItemActive: {
-    backgroundColor: '#000000',
-  },
-  filterItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  filterItemText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#374151',
-  },
-  filterItemTextActive: {
-    color: '#FFFFFF',
-  },
-  checkmark: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkmarkText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#000000',
-  },
-  fullScreenLoader: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(255, 255, 255, 0.98)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 9999,
-  },
+  cardContent: { padding: 16 },
+  cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#111827', flex: 1 },
+  priceLabel: { fontSize: 14, fontWeight: '700', color: '#10B981', marginLeft: 8 },
+  cardNeighborhood: { fontSize: 13, color: '#6B7280', marginBottom: 6 },
+  cardDescription: { fontSize: 14, color: '#374151', lineHeight: 20, marginBottom: 12 },
+  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  ratingContainer: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  ratingText: { fontSize: 14, fontWeight: '600', color: '#111827' },
+  ratingCount: { fontSize: 12, color: '#9CA3AF' },
+  categoryBadge: { backgroundColor: '#F3F4F6', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  categoryBadgeText: { fontSize: 12, color: '#374151', fontWeight: '500' },
+  loaderContainer: { justifyContent: 'center', alignItems: 'center', paddingVertical: 80 },
+  loaderText: { marginTop: 16, fontSize: 16, color: '#6B7280' },
+  emptyContainer: { justifyContent: 'center', alignItems: 'center', paddingVertical: 60, gap: 16 },
+  emptyText: { fontSize: 16, color: '#6B7280', textAlign: 'center', paddingHorizontal: 40 },
+  errorText: { fontSize: 16, color: '#EF4444', textAlign: 'center', marginBottom: 16 },
+  retryButton: { backgroundColor: '#000000', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
+  retryButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
+  clearButton: { paddingHorizontal: 20, paddingVertical: 12, backgroundColor: '#111827', borderRadius: 12 },
+  clearButtonText: { fontSize: 15, color: '#FFFFFF', fontWeight: '600' },
 });

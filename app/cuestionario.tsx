@@ -1,17 +1,15 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, StatusBar, TextInput, Platform, ActivityIndicator, Alert, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, StatusBar, TextInput, ActivityIndicator, Alert, Keyboard } from 'react-native';
 import { router } from 'expo-router';
 import { IconSymbol } from '@/components/ui/IconSymbol';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { useUser, useClerk } from '@clerk/clerk-expo';
 import { UserService } from '@/lib/userService';
-import AgentsService from '@/lib/agentsService';
 
 interface Question {
   id: number;
   question: string;
   subtitle: string;
-  type: 'text' | 'date' | 'time' | 'location' | 'multiple-choice';
+  type: 'text' | 'multiple-choice';
   placeholder?: string;
   required?: boolean;
   options?: string[];
@@ -101,9 +99,6 @@ export default function CuestionarioScreen() {
   const [answers, setAnswers] = useState<{ [key: number]: string | Date }>({});
   const [currentAnswer, setCurrentAnswer] = useState<string>('');
   const [multiSelectAnswers, setMultiSelectAnswers] = useState<string[]>([]);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(true);
 
@@ -139,37 +134,14 @@ export default function CuestionarioScreen() {
     });
   };
 
-  const handleDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(Platform.OS === 'ios');
-    if (selectedDate) {
-      setSelectedDate(selectedDate);
-      setCurrentAnswer(selectedDate.toLocaleDateString('es-ES'));
-    }
-  };
-
-  const handleTimeChange = (event: any, selectedTime?: Date) => {
-    setShowTimePicker(Platform.OS === 'ios');
-    if (selectedTime) {
-      setSelectedDate(selectedTime);
-      setCurrentAnswer(selectedTime.toLocaleTimeString('es-ES', {
-        hour: '2-digit',
-        minute: '2-digit'
-      }));
-    }
-  };
-
   const handleNext = () => {
     const currentQ = questions[currentQuestion];
     let answerToSave = currentAnswer;
 
-    // Si es multiselect, usar el array de respuestas
     if (currentQ.multiSelect) {
       answerToSave = multiSelectAnswers.join(', ');
-    } else if (currentQ.type === 'date' || currentQ.type === 'time') {
-      answerToSave = selectedDate.toISOString();
     }
 
-    // Validar si la respuesta es requerida
     if (currentQ.required && answerToSave.trim() === '') {
       return; // No continuar si es requerida y está vacía
     }
@@ -188,7 +160,6 @@ export default function CuestionarioScreen() {
       setCurrentQuestion(currentQuestion + 1);
       setCurrentAnswer('');
       setMultiSelectAnswers([]);
-      setSelectedDate(new Date());
     } else {
       handleComplete();
     }
@@ -242,16 +213,16 @@ export default function CuestionarioScreen() {
       return;
     }
 
-    // IMPORTANTE: Guardar la última respuesta antes de completar
+    // IMPORTANTE: Guardar la ultima respuesta antes de completar
     const currentQ = questions[currentQuestion];
     let finalAnswers = { ...answers };
 
-    if (currentAnswer.trim() !== '') {
-      let answerToSave = currentAnswer;
-      if (currentQ.type === 'date' || currentQ.type === 'time') {
-        answerToSave = selectedDate.toISOString();
+    if (currentQ.multiSelect) {
+      if (multiSelectAnswers.length > 0) {
+        finalAnswers[currentQ.id] = multiSelectAnswers.join(', ');
       }
-      finalAnswers[currentQ.id] = answerToSave;
+    } else if (currentAnswer.trim() !== '') {
+      finalAnswers[currentQ.id] = currentAnswer;
     }
 
     setSaving(true);
@@ -281,8 +252,8 @@ export default function CuestionarioScreen() {
         return;
       }
 
-      // Guardar las respuestas del cuestionario usando finalAnswers
-      await UserService.saveAstralQuestionnaire(supabaseUser.id, finalAnswers);
+      // Guardar las respuestas del cuestionario Mundial usando finalAnswers
+      await UserService.saveOnboardingMundial(supabaseUser.id, finalAnswers);
     } catch (error) {
       console.error('Error in handleComplete:', error);
       Alert.alert(
@@ -374,7 +345,6 @@ export default function CuestionarioScreen() {
         }
 
       case 'text':
-      case 'location':
         return (
           <TextInput
             style={styles.textInput}
@@ -382,61 +352,11 @@ export default function CuestionarioScreen() {
             onChangeText={handleTextChange}
             placeholder={currentQ.placeholder}
             placeholderTextColor="#9CA3AF"
-            multiline={currentQ.type === 'location'}
-            numberOfLines={currentQ.type === 'location' ? 2 : 1}
             returnKeyType="done"
             blurOnSubmit={true}
             onSubmitEditing={() => Keyboard.dismiss()}
           />
         );
-
-      case 'date':
-        return (
-          <View>
-            <TouchableOpacity
-              style={styles.dateButton}
-              onPress={() => setShowDatePicker(true)}
-            >
-              <Text style={[styles.dateButtonText, currentAnswer && styles.dateButtonTextFilled]}>
-                {currentAnswer || 'Selecciona tu fecha de nacimiento'}
-              </Text>
-              <IconSymbol name="calendar" size={20} color="#6B7280" />
-            </TouchableOpacity>
-            {showDatePicker && (
-              <DateTimePicker
-                value={selectedDate}
-                mode="date"
-                display="default"
-                onChange={handleDateChange}
-                maximumDate={new Date()}
-              />
-            )}
-          </View>
-        );
-
-      case 'time':
-        return (
-          <View>
-            <TouchableOpacity
-              style={styles.dateButton}
-              onPress={() => setShowTimePicker(true)}
-            >
-              <Text style={[styles.dateButtonText, currentAnswer && styles.dateButtonTextFilled]}>
-                {currentAnswer || 'Selecciona tu hora de nacimiento'}
-              </Text>
-              <IconSymbol name="clock" size={20} color="#6B7280" />
-            </TouchableOpacity>
-            {showTimePicker && (
-              <DateTimePicker
-                value={selectedDate}
-                mode="time"
-                display="default"
-                onChange={handleTimeChange}
-              />
-            )}
-          </View>
-        );
-
 
       default:
         return null;
@@ -484,9 +404,6 @@ export default function CuestionarioScreen() {
 
         <View style={styles.inputContainer}>
           {renderInputField()}
-          {currentQ.placeholder && currentQ.type !== 'date' && currentQ.type !== 'time' && (
-            <Text style={styles.hintText}>{currentQ.placeholder}</Text>
-          )}
         </View>
       </View>
 
@@ -591,30 +508,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#374151',
     textAlignVertical: 'top',
-  },
-  dateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 12,
-    backgroundColor: '#FFFFFF',
-  },
-  dateButtonText: {
-    fontSize: 16,
-    color: '#9CA3AF',
-    flex: 1,
-  },
-  dateButtonTextFilled: {
-    color: '#374151',
-  },
-  hintText: {
-    fontSize: 14,
-    color: '#6B7280',
-    fontStyle: 'italic',
-    marginTop: 8,
   },
   footer: {
     padding: 16,

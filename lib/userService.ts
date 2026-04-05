@@ -458,6 +458,147 @@ export class UserService {
   }
 
   /**
+   * Guarda preferencias del Mundial (desde RecommendationsQuestionnaire)
+   */
+  static async saveMundialPreferences(
+    userId: number,
+    answers: {
+      cities?: string[];
+      interests?: string[];
+      budgetTier?: string;
+      safetyPriority?: string;
+      accommodation?: string;
+      specialWish?: string;
+    }
+  ): Promise<boolean> {
+    try {
+      const preferencesData = {
+        user_id: userId,
+        interests: answers.interests || [],
+        budget_tier: answers.budgetTier || null,
+        mundial_focus: true,
+        completed: true,
+        completed_at: new Date().toISOString(),
+      };
+
+      const { data: existing } = await supabase
+        .from('user_travel_preferences')
+        .select('id')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (existing) {
+        const { error } = await supabase
+          .from('user_travel_preferences')
+          .update({ ...preferencesData, updated_at: new Date().toISOString() })
+          .eq('user_id', userId);
+
+        if (error) {
+          console.error('Error updating mundial preferences:', error);
+          return false;
+        }
+      } else {
+        const { error } = await supabase
+          .from('user_travel_preferences')
+          .insert(preferencesData);
+
+        if (error) {
+          console.error('Error saving mundial preferences:', error);
+          return false;
+        }
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Unexpected error saving mundial preferences:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Guarda respuestas del cuestionario de onboarding (Mundial)
+   * Mapea: Q1->name, Q2->country_origin, Q3->duration_stay,
+   *        Q4->companions, Q5->interests[], Q6->budget_tier
+   */
+  static async saveOnboardingMundial(
+    userId: number,
+    answers: { [key: number]: string | Date }
+  ): Promise<boolean> {
+    try {
+      // Save to astral_questionnaire_responses (for onboarding completion tracking only)
+      const completionData = {
+        user_id: userId,
+        name: answers[1] ? String(answers[1]) : null,
+        completed: true,
+        completed_at: new Date().toISOString(),
+      };
+
+      const { data: existingQ } = await supabase
+        .from('astral_questionnaire_responses')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (existingQ) {
+        await supabase
+          .from('astral_questionnaire_responses')
+          .update({ ...completionData, updated_at: new Date().toISOString() })
+          .eq('user_id', userId);
+      } else {
+        await supabase
+          .from('astral_questionnaire_responses')
+          .insert(completionData);
+      }
+
+      // Save Mundial-specific fields to user_travel_preferences
+      const interests = answers[5]
+        ? String(answers[5]).split(', ').filter(s => s.trim() !== '')
+        : [];
+
+      const budgetMap: Record<string, string> = {
+        'Viajero economico / mochilero': 'economico',
+        'Comodidad a buen precio': 'moderado',
+        'Experiencias premium': 'premium',
+        'Lo mejor sin limites': 'sin_limite',
+      };
+
+      const preferencesData = {
+        user_id: userId,
+        country_origin: answers[2] ? String(answers[2]) : null,
+        duration_stay: answers[3] ? String(answers[3]) : null,
+        companions: answers[4] ? String(answers[4]) : null,
+        interests: interests,
+        budget_tier: budgetMap[String(answers[6])] || String(answers[6]) || null,
+        mundial_focus: true,
+        completed: true,
+        completed_at: new Date().toISOString(),
+      };
+
+      const { data: existing } = await supabase
+        .from('user_travel_preferences')
+        .select('id')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (existing) {
+        await supabase
+          .from('user_travel_preferences')
+          .update({ ...preferencesData, updated_at: new Date().toISOString() })
+          .eq('user_id', userId);
+      } else {
+        await supabase
+          .from('user_travel_preferences')
+          .insert(preferencesData);
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error saving onboarding mundial:', error);
+      return false;
+    }
+  }
+
+  /**
    * Elimina todos los datos del usuario de Supabase
    * Esto incluye: perfil astral, preferencias de viaje, respuestas del cuestionario y el usuario
    */

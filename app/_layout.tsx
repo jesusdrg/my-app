@@ -1,3 +1,20 @@
+
+/*
+██╗███╗   ███╗    ███████╗██╗      ██████╗  █████╗ ████████╗██╗███╗   ██╗ ██████╗ 
+██║████╗ ████║    ██╔════╝██║     ██╔═══██╗██╔══██╗╚══██╔══╝██║████╗  ██║██╔════╝ 
+██║██╔████╔██║    █████╗  ██║     ██║   ██║███████║   ██║   ██║██╔██╗ ██║██║  ███╗
+██║██║╚██╔╝██║    ██╔══╝  ██║     ██║   ██║██╔══██║   ██║   ██║██║╚██╗██║██║   ██║
+██║██║ ╚═╝ ██║    ██║     ███████╗╚██████╔╝██║  ██║   ██║   ██║██║ ╚████║╚██████╔╝
+╚═╝╚═╝     ╚═╝    ╚═╝     ╚══════╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝╚═╝  ╚═══╝ ╚═════╝ 
+
+          ██████╗ ███╗   ██╗    ███╗   ███╗██╗   ██╗    ██╗   ██╗██╗██████╗ ███████╗
+         ██╔═══██╗████╗  ██║    ████╗ ████║╚██╗ ██╔╝    ██║   ██║██║██╔══██╗██╔════╝
+         ██║   ██║██╔██╗ ██║    ██╔████╔██║ ╚████╔╝     ██║   ██║██║██████╔╝█████╗  
+         ██║   ██║██║╚██╗██║    ██║╚██╔╝██║  ╚██╔╝      ╚██╗ ██╔╝██║██╔══██╗██╔══╝  
+         ╚██████╔╝██║ ╚████║    ██║ ╚═╝ ██║   ██║        ╚████╔╝ ██║██████╔╝███████╗
+          ╚═════╝ ╚═╝  ╚═══╝    ╚═╝     ╚═╝   ╚═╝         ╚═══╝  ╚═╝╚═════╝ ╚══════╝
+*/
+
 import { ClerkProvider, useAuth, useUser } from '@clerk/clerk-expo';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
@@ -106,6 +123,9 @@ function RootLayoutNav() {
           <Stack.Screen name="cuestionario" options={{ headerShown: false }} />
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="trip-detail" options={{ headerShown: false }} />
+          <Stack.Screen name="place-detail" options={{ headerShown: false }} />
+          <Stack.Screen name="itinerary" options={{ headerShown: false }} />
+          <Stack.Screen name="map" options={{ headerShown: false }} />
           <Stack.Screen name="settings" options={{ headerShown: false }} />
           <Stack.Screen name="personal-info" options={{ headerShown: false }} />
           <Stack.Screen name="help-center" options={{ headerShown: false }} />
